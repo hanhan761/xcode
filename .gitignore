@@ -1,0 +1,11 @@
+# Local credentials and generated state
+*.key
+*.pub
+known_hosts
+state.json
+*.log
+
+# PowerShell/editor noise
+*.ps1xml.user
+.vscode/
+.idea/
