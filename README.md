@@ -2,11 +2,7 @@
 
 在办公本的 PowerShell 输入 `xcode`，会打开主力机上同一个、可长期保留的 WezTerm 工作区。标签页、分屏和其中的 PowerShell 7 进程都实际运行在主力机上；办公本只是另一个图形前端。
 
-```text
-主力机 WezTerm ─┐
-                 ├─ xcode-shared-mux ─ 多个标签页/分屏 ─ PowerShell 7
-办公本 xcode ─ Tailscale ─ Windows OpenSSH ─ WezTerm SSH mux ─┘
-```
+![xcode 远程 PowerShell 工作区系统架构图](docs/xcode-remote-architecture.png)
 
 ## 先说明一个边界
 
