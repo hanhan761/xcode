@@ -12,7 +12,7 @@
 - Implemented source-node-restricted key-only OpenSSH, host-key pinning, exact ACLs, Tailscale-only listener binding and fail-closed firewall rules.
 - Implemented host and office WezTerm configurations plus the `xcode` launcher.
 - Added `xcode doctor` and emergency `xcode ssh` modes.
-- Initialized Git branch `main` and configured the requested GitHub origin.
+- Initialized Git branch `main`, committed the reviewed implementation, and pushed it to the requested GitHub origin.
 
 ### Verification Results
 
@@ -27,7 +27,7 @@
 | Three independent blocker reviews | pass; no deterministic release blockers remain |
 | CMD entry-point presence | pass |
 | Repository reusable-credential scan | pass |
-| Git remote reachability | pass; remote currently has no branches |
+| Git commit and GitHub push | pass; `main` tracks `origin/main` |
 | Real office-laptop pairing | pending |
 | Shared mux detach/reconnect | pending |
 
@@ -51,4 +51,4 @@
 
 ### Current Status
 
-Implementation and static review are complete; commit/push is in progress. No installer has been executed against the main PC yet; system configuration remains unchanged.
+Implementation and static review are complete, committed, and pushed. No installer has been executed against the main PC yet; system configuration remains unchanged.

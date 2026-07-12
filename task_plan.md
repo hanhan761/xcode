@@ -6,7 +6,7 @@ Deliver an idempotent two-PC installer so a Windows office laptop can run `xcode
 
 ## Current Phase
 
-Phase 5: repository delivery.
+Phase 5: live installation handoff.
 
 ## Phases
 
@@ -45,8 +45,8 @@ Phase 5: repository delivery.
 
 ### Phase 5: Delivery
 
-- [ ] Commit the reviewed implementation (in progress).
-- [ ] Push to `https://github.com/hanhan761/xcode.git`.
+- [x] Commit the reviewed implementation.
+- [x] Push to `https://github.com/hanhan761/xcode.git`.
 - [ ] Run `install-main.cmd`, then hand off `install-office.cmd` to the office laptop.
 - **Status:** pending
 
