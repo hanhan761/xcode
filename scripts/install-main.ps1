@@ -147,8 +147,10 @@ $muxReady = $false
 $muxDeadline = (Get-Date).AddSeconds(20)
 do {
     Start-Sleep -Milliseconds 500
-    $muxOutput = (& $wezterm cli --prefer-mux list --format json 2>$null | Out-String)
-    if ($LASTEXITCODE -eq 0 -and $muxOutput.Trim().StartsWith('[')) { $muxReady = $true }
+    $muxResult = Invoke-XcodeNativeCapture `
+        -FilePath $wezterm `
+        -ArgumentList @('cli', '--prefer-mux', 'list', '--format', 'json')
+    if ($muxResult.ExitCode -eq 0 -and $muxResult.Output.Trim().StartsWith('[')) { $muxReady = $true }
 } while (-not $muxReady -and (Get-Date) -lt $muxDeadline)
 if (-not $muxReady) {
     throw 'The local WezTerm mux did not start. Open WezTerm once, then rerun install-main.cmd.'

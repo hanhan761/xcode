@@ -53,7 +53,7 @@ Match Group administrators
        AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys
 "@
 }
-$alreadyManaged = $configHadFile -and $originalConfig -match '(?m)^# BEGIN XCODE REMOTE MANAGED BLOCK$'
+$alreadyManaged = $configHadFile -and (Test-XcodeManagedSshdConfig -Content $originalConfig)
 $service = Get-Service -Name sshd
 $tailscaleService = Get-Service -Name Tailscale -ErrorAction SilentlyContinue
 if (-not $tailscaleService) { throw 'The Tailscale Windows service was not found.' }

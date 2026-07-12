@@ -99,6 +99,27 @@ function Find-XcodeExecutable {
     return $null
 }
 
+function Invoke-XcodeNativeCapture {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$ArgumentList = @()
+    )
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = (& $FilePath @ArgumentList 2>$null | Out-String)
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    return [pscustomobject]@{
+        Output = [string]$output
+        ExitCode = [int]$exitCode
+    }
+}
+
 function Get-XcodeWingetExecutable {
     return Find-XcodeExecutable -Name 'winget.exe' -Candidates @(
         (Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\winget.exe')
@@ -583,6 +604,14 @@ function Undo-XcodeAuthorizedKeyChange {
     elseif (Test-Path -LiteralPath ([string]$Change.Path)) {
         Remove-Item -LiteralPath ([string]$Change.Path) -Force
     }
+}
+
+function Test-XcodeManagedSshdConfig {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Content)
+
+    $hasBeginMarker = $Content -match '(?m)^# BEGIN XCODE REMOTE MANAGED BLOCK\r?$'
+    $hasEndMarker = $Content -match '(?m)^# END XCODE REMOTE MANAGED BLOCK\r?$'
+    return $hasBeginMarker -and $hasEndMarker
 }
 
 function New-XcodeSshdConfigContent {

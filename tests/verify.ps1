@@ -54,6 +54,50 @@ try {
     Assert ((Get-Content -Raw -LiteralPath $atomic) -eq 'second') 'Atomic overwrite failed under Windows PowerShell 5.1.'
     Assert (@(Get-ChildItem $temp -Filter '*.xcode-replaced-*' -Force).Count -eq 0) 'Atomic replacement left a backup artifact.'
 
+    $regressionFailures = @()
+    $managedConfigFixture = "# BEGIN XCODE REMOTE MANAGED BLOCK`r`nListenAddress 100.64.0.1`r`n# END XCODE REMOTE MANAGED BLOCK`r`n"
+    $managedLfFixture = $managedConfigFixture.Replace("`r`n", "`n")
+    if (-not (Get-Command Test-XcodeManagedSshdConfig -ErrorAction SilentlyContinue)) {
+        $regressionFailures += 'The managed sshd_config detector is missing.'
+    }
+    elseif (-not (Test-XcodeManagedSshdConfig -Content $managedConfigFixture)) {
+        $regressionFailures += 'A CRLF xcode-managed sshd_config was not recognized.'
+    }
+    elseif (-not (Test-XcodeManagedSshdConfig -Content $managedLfFixture)) {
+        $regressionFailures += 'An LF xcode-managed sshd_config was not recognized.'
+    }
+    elseif (Test-XcodeManagedSshdConfig -Content 'Subsystem sftp sftp-server.exe') {
+        $regressionFailures += 'An unmanaged sshd_config was accepted as xcode-managed.'
+    }
+
+    $nativeFixture = Join-Path $temp 'native-stderr-success.cmd'
+    $nativeFailureFixture = Join-Path $temp 'native-stderr-failure.cmd'
+    Write-XcodeUtf8File -Path $nativeFixture -Content "@echo off`r`n>&2 echo harmless-warning`r`necho []`r`nexit /b 0`r`n"
+    Write-XcodeUtf8File -Path $nativeFailureFixture -Content "@echo off`r`n>&2 echo expected-error`r`nexit /b 7`r`n"
+    if (-not (Get-Command Invoke-XcodeNativeCapture -ErrorAction SilentlyContinue)) {
+        $regressionFailures += 'The native stderr capture helper is missing.'
+    }
+    else {
+        try {
+            $preferenceBeforeNativeCapture = $ErrorActionPreference
+            $nativeResult = Invoke-XcodeNativeCapture -FilePath $nativeFixture
+            if ($nativeResult.ExitCode -ne 0 -or $nativeResult.Output.Trim() -ne '[]') {
+                $regressionFailures += 'A successful native command with stderr was not captured correctly.'
+            }
+            if ($ErrorActionPreference -ne $preferenceBeforeNativeCapture) {
+                $regressionFailures += 'Native capture did not restore the caller error policy.'
+            }
+            $nativeFailureResult = Invoke-XcodeNativeCapture -FilePath $nativeFailureFixture
+            if ($nativeFailureResult.ExitCode -ne 7) {
+                $regressionFailures += 'A native nonzero exit code was not returned to the caller.'
+            }
+        }
+        catch {
+            $regressionFailures += 'Native stderr became a terminating error instead of a captured result.'
+        }
+    }
+    Assert ($regressionFailures.Count -eq 0) ($regressionFailures -join ' ')
+
     $key = Join-Path $temp 'key'
     & ssh-keygen.exe -q -t ed25519 -N 'xcode-test-only' -f $key
     Assert ($LASTEXITCODE -eq 0) 'Could not create the temporary SSH fixture.'
