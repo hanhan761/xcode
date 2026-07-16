@@ -79,6 +79,7 @@ Phase 4: close the daily lifecycle so the office laptop exposes only live main-P
 - [x] Exclude and clean stale state files from the forced SSH gateway before the office laptop sees them.
 - [x] Make the office selector clearly state that it lists only currently active main-PC conversations.
 - [x] Add deterministic stale-state and forced-SSH interaction regression harnesses.
+- [x] Prevent terminal navigation and cleared local input from indefinitely blocking an office message.
 - [ ] Perform the updated two-device acceptance: office `xcode` observes `queued` then `delivered`, and no inactive session is selectable.
 - **Status:** implementation complete; real-device acceptance pending update.
 
