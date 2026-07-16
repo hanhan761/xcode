@@ -1,160 +1,84 @@
-# xcode：两台 Windows 共享一个 PowerShell 工作区
+# xcode remote terminal
 
-在办公本的 PowerShell 输入 `xcode`，会打开主力机上同一个、可长期保留的 WezTerm 工作区。标签页、分屏和其中的 PowerShell 7 进程都实际运行在主力机上；办公本只是另一个图形前端。
+让一台 Windows 办公本以纯终端方式接入主力机**已经在运行的一个 PowerShell / Codex CLI 控制台**。不使用远程桌面，不新建 PowerShell 会话，也不接管或修改 WezTerm、Windows Terminal 的配置。
 
-![xcode 远程 PowerShell 工作区系统架构图](docs/xcode-remote-architecture.png)
+办公本显示的是主力机当前控制台的实时屏幕，并把键盘输入写回同一个控制台。因此它可以继续当前的 Codex 对话，而不是开一个新的对话。
 
-## 先说明一个边界
+```mermaid
+flowchart LR
+    A[主力机：已有 PowerShell / Codex CLI 控制台] -->|同一 Windows Console| B[xcode relay sidecar]
+    B -->|读取 CONOUT$ / 写入 CONIN$| A
+    B -->|仅 127.0.0.1 随机端口 + 临时 token| C[SSH 字节桥接进程]
+    D[办公本：xcode 终端] ==>|固定主机密钥、专用 SSH key、Tailscale| C
+```
 
-它不能把已经打开的 `powershell.exe` 或 Windows Terminal 窗口“搬进”远程会话。安装时会在主力机打开一个新的 WezTerm 工作区；以后在这个工作区里创建的标签页和分屏，主力机和办公本才能同时看见。体验与在主力机开多个 PowerShell 窗格一致。
+## 日常使用
 
-## 安装与首次配对
+主力机：在**要被接入的那个终端**里执行：
 
-不需要 clone 仓库，也不需要双击 CMD 文件。两台 Windows 电脑都先安装最新版命令：
+```powershell
+xcode
+# 或 xcode share
+```
+
+办公本：打开 PowerShell，执行：
+
+```powershell
+xcode
+# 或 xcode attach
+```
+
+办公本按 `Ctrl+C` 仅断开本地画面；主力机的终端、其中运行的命令和 Codex 对话都会继续。
+
+如果目标是一个正在交互的 Codex CLI，会由 Codex 占用输入行，不能把 `xcode share` 当作普通 PowerShell 命令键入。此时让 Codex 在**当前终端**执行 `xcode share` 即可；不要在另一扇 PowerShell 窗口执行，否则共享的是另一扇窗口。
+
+## 一次性安装与配对
+
+两台 Windows 电脑都先安装 Node.js 18+，然后在各自 PowerShell 中安装：
 
 ```powershell
 npm install --global github:hanhan761/xcode#main
 ```
 
-需要 Node.js 18 或更新版本；安装后重新打开一个 PowerShell 窗口。
-
-先在主力机使用日常工作的 Windows 管理员账户运行：
+主力机首次准备：
 
 ```powershell
 xcode setup main
 xcode pair
 ```
 
-`xcode setup main` 只准备 Tailscale、OpenSSH 和本地 WezTerm 工作区；`xcode pair` 才显示十分钟有效的 8 位配对码与 SSH 指纹。
-
-然后在办公本使用自己的 Windows 管理员账户运行：
+办公本首次准备并加入配对：
 
 ```powershell
 xcode setup office
 xcode pair
 ```
 
-办公本输入主力机显示的 8 位码，主力机确认显示的 Tailscale 设备身份；两边再核对完全相同的 SSH 主机指纹。办公本会实际打开一次 `XCODE_MAIN`，确认看见主力机工作区后输入 `y`，配对才永久提交。
+主力机 `xcode pair` 会显示一次性的 8 位码和 SSH 指纹。办公本输入该码、核对指纹后，主力机还必须本地确认该设备。配对成功后是长效的：日常只需主力机 `xcode share`、办公本 `xcode`，不再输入配对码。
 
-`setup` 只需每台机器运行一次；每增加或重新配对一台办公本时，才在两边各运行一次 `xcode pair`。
+首次主力机准备，以及每次新增/撤销办公本配对，Windows 会因 OpenSSH 服务或授权密钥变更请求 UAC；**日常共享和接入不需要 UAC**。
 
-## 日常只用一个命令
-
-主力机和办公本都使用 `xcode`，但它们附着到的是同一个终端工作区：
+## 更新、检查与撤销
 
 ```powershell
-# 主力机：回到本地 xcode-shared-mux，不改变其中的标签页和分屏
-xcode
-
-# 主力机：仅在新增办公本时生成一次性配对码
-xcode pair
-
-# 办公本：通过已配对的 SSH/WezTerm 附着到同一个工作区
-xcode
+xcode update  # 两台机器各运行一次；随后打开新的 PowerShell
+xcode status
+xcode doctor  # 办公本：检查 Tailscale、固定主机密钥 SSH、当前共享状态
+xcode unpair  # 主力机：撤销已配对办公本
 ```
 
-日常所有 PowerShell 都继续在主力机既有的 WezTerm 工作区中以标签页和分屏方式创建；办公本只附着，不会新建另一套后端 shell。
+已配对的两台机器升级到此版本后不需要重新配对：中继沿用已有的 SSH key、Tailscale 来源限制与固定主机密钥。
 
-以后新开一个办公本 PowerShell，运行：
+## 安全边界
 
-```powershell
-xcode
-```
+- 配对窗口只在主力机 Tailscale 地址上临时监听；8 位码过期即失效。
+- 办公本 SSH key 限制为其 Tailscale 地址，且关闭密码登录、代理/X11 转发与 TCP 端口转发。
+- 主力机中继只监听 `127.0.0.1`，端口随机且每次共享生成新的 256-bit token；不会对局域网或公网开放端口。
+- 办公本不使用 SSH `-L` 端口转发；它通过已验证 SSH 的标准输入/输出建立到主力机回环中继的字节桥接。
+- `xcode` 共享的是当次执行命令所在的一个 Windows Console。多个彼此独立的 PowerShell/Windows Terminal 窗口需要分别选择；当前版本一次只保留一个活动共享目标。
 
-其他命令：
+## 已知限制
 
-```powershell
-xcode doctor   # 检查 Tailscale、固定主机密钥的 SSH、版本和远端 mux
-xcode ssh      # 紧急使用普通 SSH；该窗口本身不持久
-xcode status   # 查看本机角色与配对状态
-xcode update   # 通过 npm 更新到 GitHub 最新版
-```
+这不是远程桌面，也不是完整终端模拟器。它镜像字符屏幕和键盘输入，适合 PowerShell、Codex CLI 等文本工作流；图形界面、鼠标操作、颜色属性、独立窗口的标签/分屏布局不会被远程重建。
 
-更新后重新打开一个 PowerShell 窗口再运行 `xcode`。更新命令不会中断主力机已运行的 WezTerm 工作区。
-
-在 WezTerm 中按 `Ctrl+Shift+Alt+D` 是安全分离。直接关闭某个远程窗格或标签页，会结束那个 PowerShell 进程。
-
-## 这套设计为什么不是“普通 SSH”
-
-普通 SSH 断开后，交互式 shell 通常随连接结束。本项目让 OpenSSH 只负责加密传输和身份认证，再让办公本 WezTerm 附着到主力机的独立 mux。网络切换或办公本 GUI 分离后，主力机上的窗格仍继续运行。
-
-Windows 目前不能作为 Tailscale SSH server，因此这里使用的是 Tailscale 私网中的标准 Windows OpenSSH，而不是 `tailscale ssh`。
-
-## 安全设计
-
-- `sshd` 只监听主力机的 Tailscale IPv4，不监听局域网或公网地址。
-- Windows 防火墙规则同时限定 Tailscale 网卡、本机 Tailscale IP、Tailscale 来源网段和 `sshd.exe`。
-- 密码、键盘交互认证和 SSH 转发全部关闭，只接受 Ed25519 公钥。
-- SSH 服务在首次安装后保持关闭；只有办公本密钥写入并完成验证回执后才启动。预提交期间服务保持 Manual，ACL 保护的事务日志和隐藏 watchdog 会在配对进程崩溃或超时时撤销密钥、服务与防火墙变更。
-- 办公本密钥带 `from=` 限制，只能从配对时那个 Tailscale 节点的 `/32` 和 `/128` 地址使用。
-- 配对响应由一次性配对码做 HMAC 证明，并再次核对 Tailscale StableID、返回字段和 SSH 指纹，避免把网络字段直接写入配置。
-- `administrators_authorized_keys` 使用同目录临时文件原子替换，最终 ACL 只允许 SYSTEM 和 Administrators。
-- 办公本使用一个专用、无口令的 SSH 私钥，以实现真正的一条命令连接。它依赖 Windows 用户 ACL、Tailscale 设备身份和来源地址限制共同保护；私钥不会离开办公本。
-
-如果 UAC 要求输入“另一个”管理员账户，安装器会检测到 SID 改变并停止，防止把私钥、PATH 或远程管理员权限装到错误账户。请直接登录你打算使用的管理员账户后重试。
-
-## 丢失办公本或撤销权限
-
-先在 Tailscale 的 Machines 页面删除/禁用丢失的办公本，再在主力机运行：
-
-```powershell
-xcode unpair
-```
-
-选择对应的节点和 SSH 指纹即可撤销主力机上的公钥。两步都做，能够同时撤销 Tailscale 网络身份和 SSH 凭据。
-
-## 持久性限制
-
-- 办公本断网、换 Wi-Fi 或安全分离，不会结束主力机窗格。
-- 主力机重启、WezTerm mux 崩溃或显式关闭窗格，会结束对应运行状态。
-- WezTerm 不提供单写者锁；不要同时从两台电脑向同一个窗格输入。
-- 主力机必须开机且不能睡眠。Tailscale 和 SSH 本身不能唤醒睡眠中的电脑。
-- 主力机本地 WezTerm 与 SSH 登录必须是同一个 Windows 用户，才能看见同一个 mux。
-- 需要 WezTerm 20240203 或更新版本，而且两台机版本必须完全一致。
-
-Tailscale 设备密钥有独立到期策略。需要无人值守时，可以只对主力机关闭 Tailscale key expiry；办公本保留到期机制，丢失时风险更低。
-
-## 对现有配置的处理
-
-- 如果主力机已有非 xcode 管理且正在运行的 OpenSSH，安装器会拒绝接管。
-- 如果主力机已有 `.wezterm.lua`，安装器会先明确询问是否备份并替换；默认不覆盖。
-- 安装器不会卸载已经存在的软件。机器级 SSH 配置、服务和防火墙修改在失败时会尽量回滚；Tailscale 登录和已安装的软件会保留，方便重试。
-- 稳定版 WezTerm 的 SSH 解析器不能可靠处理带空格的 identity/known-hosts 路径。因此 Windows 用户配置文件路径包含空格时，安装器会安全停止并说明原因。
-
-## 写入的主要文件
-
-主力机：
-
-- `%USERPROFILE%\.wezterm.lua`（已有文件需明确同意，且会备份）
-- `%LOCALAPPDATA%\XcodeRemote\host-user.json`
-- `%ProgramData%\XcodeRemote\host.json`
-- `%ProgramData%\XcodeRemote\wezterm-proxy.cmd`（ACL 收紧的无空格远端启动代理）
-- `%ProgramData%\XcodeRemote\pairing-pending.json`（仅在未提交配对期间短暂存在）
-- `%ProgramData%\ssh\sshd_config`（原文件带时间戳备份）
-- `%ProgramData%\ssh\administrators_authorized_keys`
-
-办公本：
-
-- `%USERPROFILE%\.ssh\xcode_office_ed25519`
-- `%LOCALAPPDATA%\XcodeRemote\known_hosts`
-- `%LOCALAPPDATA%\XcodeRemote\ssh_config`
-- `%LOCALAPPDATA%\XcodeRemote\office-wezterm.lua`
-- npm 的全局 `xcode` 命令（由 `xcode-remote` 包提供）
-
-## 上线前的两机实测
-
-仓库内验证覆盖 PowerShell 语法、配对证明、密钥解析、SSH 配置幂等性和凭据扫描；真正的 Windows-to-Windows mux 仍必须在两台真实机器上跑一次：
-
-1. 主力机创建三个窗格，办公本运行 `xcode`，确认看到相同窗格。
-2. 办公本安全分离、切换网络后重连。
-3. 两台机分别重启后运行 `xcode doctor`。
-4. 关闭 Tailscale，从局域网确认主力机 TCP 22 不可达。
-
-## 官方资料
-
-- [Microsoft：安装 Windows OpenSSH](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse)
-- [Microsoft：Windows OpenSSH 密钥管理与 ACL](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement)
-- [Tailscale：Windows unattended mode](https://tailscale.com/docs/how-to/run-unattended)
-- [Tailscale：Tailscale SSH 平台限制](https://tailscale.com/kb/1193/tailscale-ssh)
-- [WezTerm：multiplexing](https://wezterm.org/multiplexing.html)
-- [WezTerm：SSH domains](https://wezterm.org/config/lua/SshDomain.html)
+Windows Console 的伪控制台机制必须在程序启动前创建，无法接管一个已经运行的控制台；本项目因此使用同一控制台内启动的轻量中继。有关这一边界可参考 Microsoft 的 [Pseudoconsole 文档](https://learn.microsoft.com/en-us/windows/console/pseudoconsoles) 和 [AttachConsole 文档](https://learn.microsoft.com/en-us/windows/console/attachconsole)。

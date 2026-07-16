@@ -3,7 +3,6 @@ param(
     [Parameter(Mandatory = $true)][ValidatePattern('^S-1-5-')][string]$ExpectedSid,
     [Parameter(Mandatory = $true)][string]$ExpectedUser,
     [Parameter(Mandatory = $true)][ValidatePattern('^100\.')][string]$TailscaleIPv4,
-    [Parameter(Mandatory = $true)][string]$WezTermDirectory,
     [ValidatePattern('^[A-Za-z0-9-]+$')][string]$MainName = 'xcode-main'
 )
 
@@ -13,10 +12,6 @@ $ErrorActionPreference = 'Stop'
 Assert-XcodeElevatedIdentity -ExpectedSid $ExpectedSid -ExpectedUser $ExpectedUser
 if ($ExpectedUser -notmatch '^[A-Za-z0-9._@\-]+$') {
     throw "The Windows username is not supported by this installer: $ExpectedUser"
-}
-$WezTermDirectory = [IO.Path]::GetFullPath($WezTermDirectory).TrimEnd('\')
-if (-not (Test-Path -LiteralPath (Join-Path $WezTermDirectory 'wezterm.exe'))) {
-    throw "The trusted WezTerm installation was not found under $WezTermDirectory."
 }
 
 $capabilityName = 'OpenSSH.Server~~~~0.0.1.0'
@@ -88,17 +83,10 @@ if ($oldOwnedRule) {
     if ($applicationFilter.Program) { $oldOwnedProgram = $applicationFilter.Program }
 }
 
-$previousMachinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
 $previousStartType = [string](Get-CimInstance Win32_Service -Filter "Name='sshd'").StartMode
 $previousWasRunning = $service.Status -eq 'Running'
 $configBackup = $null
 $configChanged = $false
-$pathChanged = $false
-$programDataRoot = Join-Path $env:ProgramData 'XcodeRemote'
-$remoteProxyPath = Join-Path $programDataRoot 'wezterm-proxy.cmd'
-$proxyHadFile = Test-Path -LiteralPath $remoteProxyPath -PathType Leaf
-$proxyOriginalContent = if ($proxyHadFile) { Get-Content -Raw -LiteralPath $remoteProxyPath } else { '' }
-$proxyChanged = $false
 
 function New-OwnedFirewallRule {
     param(
@@ -122,28 +110,6 @@ function New-OwnedFirewallRule {
         -RemoteAddress $RemoteAddress `
         -Program $Program `
         -Profile Any | Out-Null
-}
-
-function Set-XcodeRemoteProxyAcl {
-    param([Parameter(Mandatory = $true)][string]$Path)
-    $admins = New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544')
-    $system = New-Object Security.Principal.SecurityIdentifier('S-1-5-18')
-    $user = New-Object Security.Principal.SecurityIdentifier($ExpectedSid)
-    $acl = New-Object Security.AccessControl.FileSecurity
-    $acl.SetOwner($admins)
-    $acl.SetAccessRuleProtection($true, $false)
-    $entries = @(
-        [pscustomobject]@{ Sid = $admins; Rights = [Security.AccessControl.FileSystemRights]::FullControl },
-        [pscustomobject]@{ Sid = $system; Rights = [Security.AccessControl.FileSystemRights]::FullControl },
-        [pscustomobject]@{ Sid = $user; Rights = [Security.AccessControl.FileSystemRights]::ReadAndExecute }
-    )
-    foreach ($entry in $entries) {
-        $rule = New-Object Security.AccessControl.FileSystemAccessRule(
-            $entry.Sid, $entry.Rights, [Security.AccessControl.AccessControlType]::Allow
-        )
-        [void]$acl.AddAccessRule($rule)
-    }
-    Set-Acl -LiteralPath $Path -AclObject $acl
 }
 
 try {
@@ -208,26 +174,17 @@ try {
         throw 'sshd is not restricted to the main PC Tailscale IPv4 address.'
     }
 
-    $pathResult = Add-XcodePathEntry -Directory $WezTermDirectory -Scope Machine
-    $pathChanged = $pathResult.Changed
-
     $programDataRoot = Join-Path $env:ProgramData 'XcodeRemote'
     if (-not (Test-Path -LiteralPath $programDataRoot)) {
         New-Item -ItemType Directory -Path $programDataRoot -Force | Out-Null
     }
-    $proxyContent = "@echo off`r`n`"$WezTermDirectory\wezterm.exe`" %*`r`nexit /b %ERRORLEVEL%`r`n"
-    Write-XcodeUtf8File -Path $remoteProxyPath -Content $proxyContent
-    Set-XcodeRemoteProxyAcl -Path $remoteProxyPath
-    $proxyChanged = $true
-    $remoteProxyForSsh = $remoteProxyPath -replace '\\', '/'
     $state = [ordered]@{
-        schemaVersion = 2
+        schemaVersion = 3
         role = 'main'
         machineName = $MainName
         tailscaleIPv4 = $TailscaleIPv4
         windowsUser = $ExpectedUser
         windowsSid = $ExpectedSid
-        remoteWezTermPath = $remoteProxyForSsh
         sshdConfig = $sshdConfig
         sshdConfigBackup = $configBackup
         sshdWasManaged = $alreadyManaged
@@ -268,21 +225,6 @@ catch {
         try {
             if ($configHadFile) { Write-XcodeUtf8File -Path $sshdConfig -Content $originalConfig }
             elseif (Test-Path -LiteralPath $sshdConfig) { Remove-Item -LiteralPath $sshdConfig -Force }
-        }
-        catch {}
-    }
-    if ($pathChanged) {
-        try { [Environment]::SetEnvironmentVariable('Path', $previousMachinePath, 'Machine') } catch {}
-    }
-    if ($proxyChanged) {
-        try {
-            if ($proxyHadFile) {
-                Write-XcodeUtf8File -Path $remoteProxyPath -Content $proxyOriginalContent
-                Set-XcodeRemoteProxyAcl -Path $remoteProxyPath
-            }
-            elseif (Test-Path -LiteralPath $remoteProxyPath) {
-                Remove-Item -LiteralPath $remoteProxyPath -Force
-            }
         }
         catch {}
     }

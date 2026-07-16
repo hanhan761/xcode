@@ -21,7 +21,9 @@ First run from this repository:
   .\xcode setup office
 
 After setup:
-  xcode                 Attach to this machine's xcode workspace
+  xcode                 Share (main) or attach to (office) the current host terminal
+  xcode share           Start a relay for the current main-PC terminal
+  xcode attach          Attach an office laptop to the currently shared terminal
   xcode pair [host]     Create (main) or join (office) a one-time pairing
   xcode status          Show this machine's xcode role and pairing state
   xcode doctor          Verify an office laptop's secure connection
@@ -50,16 +52,43 @@ function Get-XcodeOfficeState {
     return (Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json)
 }
 
-function Connect-XcodeOfficeWorkspace {
-    $installRoot = Join-Path $env:LOCALAPPDATA 'XcodeRemote'
-    [void](Get-XcodeOfficeState)
-    $wezterm = Get-XcodeWezTermExecutable
-    if (-not $wezterm) { throw 'WezTerm is unavailable. Run xcode setup office to repair this laptop.' }
-    $config = Join-Path $installRoot 'office-wezterm.lua'
-    if (-not (Test-Path -LiteralPath $config -PathType Leaf)) {
-        throw 'The office WezTerm configuration is missing. Run xcode pair to repair the pairing.'
+function Start-XcodeConsoleShare {
+    $shareScript = Join-Path $PSScriptRoot 'console-relay-host.ps1'
+    if (-not (Test-Path -LiteralPath $shareScript -PathType Leaf)) { throw 'The console relay host is missing. Run xcode update.' }
+    $statePath = Join-Path $env:LOCALAPPDATA 'XcodeRemote\console-share.json'
+    if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+        try {
+            $existing = Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json
+            if ($existing.agentProcessId -and (Get-Process -Id ([int]$existing.agentProcessId) -ErrorAction SilentlyContinue)) {
+                Write-Host "This terminal is already shared. Office laptops can run xcode now." -ForegroundColor Green
+                return
+            }
+        }
+        catch {}
+        Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
     }
-    & $wezterm --config-file $config connect XCODE_MAIN
+
+    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $process = Start-Process -FilePath $powershell -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $shareScript, '-StatePath', $statePath) -NoNewWindow -PassThru
+    $deadline = (Get-Date).AddSeconds(5)
+    do {
+        Start-Sleep -Milliseconds 100
+    } while (-not (Test-Path -LiteralPath $statePath -PathType Leaf) -and (Get-Date) -lt $deadline -and -not $process.HasExited)
+    if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
+        throw "The current terminal could not be shared (relay exit $($process.ExitCode))."
+    }
+    Write-Host 'This terminal is now shared. On the paired office laptop, run xcode.' -ForegroundColor Green
+}
+
+function Connect-XcodeOfficeSharedTerminal {
+    [void](Get-XcodeOfficeState)
+    $node = Get-Command node.exe -ErrorAction SilentlyContinue
+    if (-not $node) { throw 'Node.js is unavailable. Reinstall xcode with npm, then open a new PowerShell window.' }
+    $client = Join-Path $RepositoryRoot 'bin\console-relay-client.js'
+    if (-not (Test-Path -LiteralPath $client -PathType Leaf)) { throw 'The console relay client is missing. Run xcode update.' }
+    $sshConfig = Join-Path $env:LOCALAPPDATA 'XcodeRemote\ssh_config'
+    if (-not (Test-Path -LiteralPath $sshConfig -PathType Leaf)) { throw 'This office laptop is not paired. Run xcode pair first.' }
+    & $node.Source $client --ssh-config $sshConfig
 }
 
 function Invoke-XcodeOfficeDoctor {
@@ -71,18 +100,17 @@ function Invoke-XcodeOfficeDoctor {
     $sshConfig = Join-Path $installRoot 'ssh_config'
     if (-not (Test-Path -LiteralPath $sshConfig -PathType Leaf)) { throw 'The pinned office SSH configuration is missing.' }
 
-    Write-Host '[1/4] Tailscale status'
+    Write-Host '[1/3] Tailscale status'
     & $tailscale status
     if ($LASTEXITCODE -ne 0) { throw 'Tailscale status failed.' }
-    Write-Host "`n[2/4] Key-only, pinned-host SSH"
+    Write-Host "`n[2/3] Key-only, pinned-host SSH"
     & $ssh -F $sshConfig -o BatchMode=yes xcode-main 'echo XCODE_SSH_OK'
     if ($LASTEXITCODE -ne 0) { throw 'Pinned SSH verification failed.' }
-    Write-Host "`n[3/4] Matching remote WezTerm"
-    & $ssh -F $sshConfig -o BatchMode=yes xcode-main ([string]$state.remoteWezTermPath + ' --version')
-    if ($LASTEXITCODE -ne 0) { throw 'Remote WezTerm version verification failed.' }
-    Write-Host "`n[4/4] Persistent host mux"
-    & $ssh -F $sshConfig -o BatchMode=yes xcode-main ([string]$state.remoteWezTermPath + ' cli --prefer-mux list --format json')
-    if ($LASTEXITCODE -ne 0) { throw 'Host mux verification failed.' }
+    Write-Host "`n[3/3] Main-PC shared-terminal availability"
+    $remoteProbe = "if (-not (Test-Path -LiteralPath (Join-Path `$env:LOCALAPPDATA 'XcodeRemote\console-share.json'))) { exit 3 }"
+    $encodedProbe = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($remoteProbe))
+    & $ssh -F $sshConfig -o BatchMode=yes xcode-main powershell.exe -NoProfile -NonInteractive -EncodedCommand $encodedProbe
+    if ($LASTEXITCODE -ne 0) { throw 'Shared-terminal availability verification failed.' }
 }
 
 function Update-XcodePackage {
@@ -126,10 +154,9 @@ switch ($installedRole) {
     'main' {
         switch ($verb) {
             '' {
-                $wezterm = Get-XcodeWezTermExecutable
-                if (-not $wezterm) { throw 'WezTerm is unavailable. Run xcode setup main to repair this PC.' }
-                & $wezterm connect xcode-shared-mux
+                Start-XcodeConsoleShare
             }
+            'share' { Start-XcodeConsoleShare }
             'pair' {
                 if ($Command.Count -ne 1) { throw 'The main PC pairing command takes no host argument: xcode pair' }
                 & (Join-Path $PSScriptRoot 'pair-office.ps1')
@@ -145,7 +172,8 @@ switch ($installedRole) {
     }
     'office' {
         switch ($verb) {
-            '' { Connect-XcodeOfficeWorkspace }
+            '' { Connect-XcodeOfficeSharedTerminal }
+            'attach' { Connect-XcodeOfficeSharedTerminal }
             'pair' {
                 if ($Command.Count -gt 2) { throw 'Usage: xcode pair [main-host]' }
                 $mainHost = if ($Command.Count -eq 2) { $Command[1] } else { 'xcode-main' }

@@ -258,13 +258,6 @@ function Backup-XcodeFile {
     return $backup
 }
 
-function ConvertTo-XcodeLuaString {
-    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Value)
-
-    $escaped = $Value.Replace('\', '\\').Replace("'", "\'").Replace("`r", '\r').Replace("`n", '\n')
-    return "'$escaped'"
-}
-
 function Assert-XcodeNoControlCharacters {
     param(
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Value,
@@ -275,32 +268,9 @@ function Assert-XcodeNoControlCharacters {
     }
 }
 
-function Assert-XcodeNoWhitespacePath {
-    param(
-        [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$Purpose
-    )
-    if ($Path -match '\s') {
-        throw "$Purpose is under a Windows path containing whitespace, which the stable WezTerm SSH parser cannot safely consume: $Path. Use a Windows account/profile path without spaces."
-    }
-}
-
 function Get-XcodeTailscaleExecutable {
     return Find-XcodeExecutable -Name 'tailscale.exe' -Candidates @(
         (Join-Path $env:ProgramFiles 'Tailscale\tailscale.exe')
-    )
-}
-
-function Get-XcodeWezTermExecutable {
-    return Find-XcodeExecutable -Name 'wezterm.exe' -Candidates @(
-        (Join-Path $env:ProgramFiles 'WezTerm\wezterm.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\wezterm.exe')
-    )
-}
-
-function Get-XcodePowerShell7Executable {
-    return Find-XcodeExecutable -Name 'pwsh.exe' -Candidates @(
-        (Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe')
     )
 }
 
@@ -359,15 +329,6 @@ function Get-XcodeTailscaleWhois {
     return $json | ConvertFrom-Json
 }
 
-function Assert-XcodeSupportedWezTermVersion {
-    param([Parameter(Mandatory = $true)][string]$Version)
-
-    $match = [regex]::Match($Version.Trim(), '^wezterm (\d{8})-')
-    if (-not $match.Success -or [int]$match.Groups[1].Value -lt 20240203) {
-        throw "WezTerm 20240203 or newer is required for this SSH mux configuration. Found: $Version"
-    }
-}
-
 function New-XcodePairCode {
     $bytes = New-Object byte[] 4
     $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
@@ -395,9 +356,7 @@ function Get-XcodePairProof {
         [Parameter(Mandatory = $true)][string]$WindowsUser,
         [Parameter(Mandatory = $true)][string]$HostKeyFingerprint,
         [Parameter(Mandatory = $true)][string]$AuthorizedKeyFingerprint,
-        [Parameter(Mandatory = $true)][string]$RequesterNodeId,
-        [Parameter(Mandatory = $true)][string]$RemoteWezTermPath,
-        [Parameter(Mandatory = $true)][string]$WezTermVersion
+        [Parameter(Mandatory = $true)][string]$RequesterNodeId
     )
 
     $message = @(
@@ -408,9 +367,7 @@ function Get-XcodePairProof {
         $WindowsUser,
         $HostKeyFingerprint,
         $AuthorizedKeyFingerprint,
-        $RequesterNodeId,
-        $RemoteWezTermPath,
-        $WezTermVersion
+        $RequesterNodeId
     ) -join "`n"
     $hmac = New-Object Security.Cryptography.HMACSHA256
     try {

@@ -45,8 +45,7 @@ function Open-XcodePairSession {
         [Parameter(Mandatory = $true)][int]$Port,
         [Parameter(Mandatory = $true)][string]$PairCode,
         [Parameter(Mandatory = $true)][string]$PublicKey,
-        [Parameter(Mandatory = $true)][string]$DeviceName,
-        [Parameter(Mandatory = $true)][string]$WezTermVersion
+        [Parameter(Mandatory = $true)][string]$DeviceName
     )
 
     $client = [Net.Sockets.TcpClient]::new()
@@ -62,12 +61,11 @@ function Open-XcodePairSession {
         $writer.AutoFlush = $true
         $nonce = New-XcodePairNonce
         $request = [ordered]@{
-            protocolVersion = 2
+            protocolVersion = 3
             pairCode = (($PairCode -replace '[^0-9]', ''))
             nonce = $nonce
             publicKey = $PublicKey.Trim()
             deviceName = $DeviceName
-            weztermVersion = $WezTermVersion
         }
         $writer.WriteLine(($request | ConvertTo-Json -Compress -Depth 4))
         $writer.Flush()
@@ -138,12 +136,11 @@ function Assert-XcodePairingResponse {
         [Parameter(Mandatory = $true)][object]$LocalStatus,
         [Parameter(Mandatory = $true)][string]$PairCode,
         [Parameter(Mandatory = $true)][string]$PairAddress,
-        [Parameter(Mandatory = $true)][string]$LocalPublicKey,
-        [Parameter(Mandatory = $true)][string]$LocalWezTermVersion
+        [Parameter(Mandatory = $true)][string]$LocalPublicKey
     )
 
     $response = $Session.Response
-    if ([int]$response.protocolVersion -ne 2 -or [string]$response.nonce -ne [string]$Session.Nonce) {
+    if ([int]$response.protocolVersion -ne 3 -or [string]$response.nonce -ne [string]$Session.Nonce) {
         throw 'The pairing response protocol or nonce is invalid.'
     }
     if ([string]$response.mainNodeId -ne [string]$MainWhois.Node.StableID) {
@@ -152,27 +149,16 @@ function Assert-XcodePairingResponse {
     if ([string]$response.tailscaleIPv4 -ne $PairAddress) { throw 'The pairing response returned a different main-PC address.' }
     if ([string]$response.requesterNodeId -ne [string]$LocalStatus.Self.ID) { throw 'The main PC did not bind this key to the office laptop node.' }
     if ([int]$response.sshPort -ne 22) { throw 'The pairing response requested an unexpected SSH port.' }
-    $remoteProxy = [string]$response.remoteWezTermPath
-    Assert-XcodeNoControlCharacters -Value $remoteProxy -FieldName 'Remote WezTerm proxy path'
-    if ($remoteProxy -notmatch '^[A-Za-z]:/[A-Za-z0-9._/-]+\.cmd$') {
-        throw 'The pairing response requested an unsafe remote executable path.'
-    }
-
     $validatedFields = @{
         mainName = '^[A-Za-z0-9-]{1,63}$'
         dnsName = '^[A-Za-z0-9.-]{1,253}$'
         windowsUser = '^[A-Za-z0-9._@\\-]{1,128}$'
-        weztermVersion = '^[A-Za-z0-9._+ -]{1,100}$'
     }
     foreach ($field in $validatedFields.Keys) {
         $value = [string]$response.$field
         Assert-XcodeNoControlCharacters -Value $value -FieldName $field
         if ($value -notmatch $validatedFields[$field]) { throw "The pairing response field $field is invalid." }
     }
-    if ([string]$response.weztermVersion -ne $LocalWezTermVersion) {
-        throw "WezTerm versions differ. Main: $($response.weztermVersion); office: $LocalWezTermVersion"
-    }
-
     $hostKey = Get-XcodeCanonicalSshPublicKey -PublicKey ([string]$response.sshHostKey)
     $hostFingerprint = Get-XcodeSshPublicKeyFingerprint -PublicKey $hostKey
     if ($hostFingerprint -ne [string]$response.sshHostKeyFingerprint) { throw 'The returned SSH host-key fingerprint is inconsistent.' }
@@ -195,9 +181,7 @@ function Assert-XcodePairingResponse {
         -WindowsUser ([string]$response.windowsUser) `
         -HostKeyFingerprint ([string]$response.sshHostKeyFingerprint) `
         -AuthorizedKeyFingerprint ([string]$response.authorizedKeyFingerprint) `
-        -RequesterNodeId ([string]$response.requesterNodeId) `
-        -RemoteWezTermPath $remoteProxy `
-        -WezTermVersion ([string]$response.weztermVersion)
+        -RequesterNodeId ([string]$response.requesterNodeId)
     if (-not (Test-XcodeFixedTimeString -Left $expectedProof -Right ([string]$response.proof))) {
         throw 'The pairing response did not prove possession of the one-time code.'
     }
@@ -209,17 +193,13 @@ function Write-XcodeOfficeFiles {
         [Parameter(Mandatory = $true)][object]$Pairing,
         [Parameter(Mandatory = $true)][string]$HostKey,
         [Parameter(Mandatory = $true)][string]$KeyPath,
-        [Parameter(Mandatory = $true)][string]$WezTermPath,
         [Parameter(Mandatory = $true)][string]$InstallRoot
     )
 
     if (-not (Test-Path -LiteralPath $InstallRoot)) { New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null }
     $knownHosts = Join-Path $InstallRoot 'known_hosts'
     $sshConfig = Join-Path $InstallRoot 'ssh_config'
-    $weztermConfig = Join-Path $InstallRoot 'office-wezterm.lua'
 
-    Assert-XcodeNoWhitespacePath -Path $KeyPath -Purpose 'The dedicated SSH private key'
-    Assert-XcodeNoWhitespacePath -Path $knownHosts -Purpose 'The pinned SSH host-key file'
     $hostNames = @(
         [string]$Pairing.mainName,
         [string]$Pairing.dnsName,
@@ -247,54 +227,8 @@ Host xcode-main
 "@
     Write-XcodeUtf8File -Path $sshConfig -Content $sshContent
 
-    $remoteAddressLua = ConvertTo-XcodeLuaString -Value ($target + ':22')
-    $userLua = ConvertTo-XcodeLuaString -Value ([string]$Pairing.windowsUser)
-    $keyLua = ConvertTo-XcodeLuaString -Value $keyForConfig
-    $knownLua = ConvertTo-XcodeLuaString -Value $knownForConfig
-    $remoteProxy = [string]$Pairing.remoteWezTermPath
-    $remoteProxyLua = ConvertTo-XcodeLuaString -Value $remoteProxy
-    $weztermContent = @"
--- XCODE REMOTE MANAGED CONFIG
-local wezterm = require 'wezterm'
-local act = wezterm.action
-local config = wezterm.config_builder()
-
-config.ssh_domains = {
-  {
-    name = 'XCODE_MAIN',
-    remote_address = $remoteAddressLua,
-    username = $userLua,
-    multiplexing = 'WezTerm',
-    remote_wezterm_path = $remoteProxyLua,
-    no_agent_auth = true,
-    ssh_option = {
-      identityfile = $keyLua,
-      userknownhostsfile = $knownLua,
-      stricthostkeychecking = 'yes',
-      passwordauthentication = 'no',
-      kbdinteractiveauthentication = 'no',
-      forwardagent = 'no',
-      serveraliveinterval = '30',
-      serveralivecountmax = '3',
-    },
-  },
-}
-
-config.window_close_confirmation = 'AlwaysPrompt'
-config.keys = {
-  {
-    key = 'D',
-    mods = 'CTRL|SHIFT|ALT',
-    action = act.DetachDomain 'CurrentPaneDomain',
-  },
-}
-
-return config
-"@
-    Write-XcodeUtf8File -Path $weztermConfig -Content $weztermContent
-
     $state = [ordered]@{
-        schemaVersion = 2
+        schemaVersion = 3
         role = 'office'
         mainName = [string]$Pairing.mainName
         mainNodeId = [string]$Pairing.mainNodeId
@@ -302,13 +236,11 @@ return config
         windowsUser = [string]$Pairing.windowsUser
         sshHostKeyFingerprint = [string]$Pairing.sshHostKeyFingerprint
         authorizedKeyFingerprint = [string]$Pairing.authorizedKeyFingerprint
-        weztermVersion = [string]$Pairing.weztermVersion
-        remoteWezTermPath = $remoteProxy
         keyPath = $KeyPath
         configuredAt = (Get-Date).ToUniversalTime().ToString('o')
     }
     Write-XcodeUtf8File -Path (Join-Path $InstallRoot 'client.json') -Content ($state | ConvertTo-Json -Depth 5)
-    return [pscustomobject]@{ SshConfig = $sshConfig; WezTermConfig = $weztermConfig }
+    return [pscustomobject]@{ SshConfig = $sshConfig }
 }
 
 function Write-XcodeOfficeSetupFiles {
@@ -334,11 +266,10 @@ if (-not $PairOnly) {
     Write-XcodeStep 'Checking WinGet and required office-laptop software'
     $winget = Assert-XcodeWinget
     Ensure-XcodeWingetPackage -WingetPath $winget -PackageId 'Tailscale.Tailscale' -DryRun:$DryRun
-    Ensure-XcodeWingetPackage -WingetPath $winget -PackageId 'wez.wezterm' -DryRun:$DryRun
 }
 Refresh-XcodeProcessPath
 if ($DryRun) {
-    Write-Host '[dry-run] Office prerequisites, dedicated key, authenticated pairing, and real WezTerm attach'
+    Write-Host '[dry-run] Office prerequisites, dedicated key, and authenticated pairing'
     exit 0
 }
 
@@ -357,11 +288,10 @@ if (-not $ssh -or -not $sshKeygen) {
 }
 
 $tailscale = Get-XcodeTailscaleExecutable
-$wezterm = Get-XcodeWezTermExecutable
 $ssh = Get-XcodeOpenSshExecutable -Name 'ssh.exe'
 $sshKeygen = Get-XcodeOpenSshExecutable -Name 'ssh-keygen.exe'
-if (-not $tailscale -or -not $wezterm -or -not $ssh -or -not $sshKeygen) {
-    throw 'A trusted Tailscale, WezTerm, or Windows OpenSSH executable is missing.'
+if (-not $tailscale -or -not $ssh -or -not $sshKeygen) {
+    throw 'A trusted Tailscale or Windows OpenSSH executable is missing.'
 }
 
 Write-XcodeStep 'Signing in to the same Tailscale account as the main PC'
@@ -379,8 +309,6 @@ $installRoot = Join-Path $env:LOCALAPPDATA 'XcodeRemote'
 $officeSetupStatePath = Join-Path $installRoot 'office-setup.json'
 $sshDirectory = Join-Path $env:USERPROFILE '.ssh'
 $keyPath = Join-Path $sshDirectory 'xcode_office_ed25519'
-Assert-XcodeNoWhitespacePath -Path $keyPath -Purpose 'The dedicated SSH private key'
-Assert-XcodeNoWhitespacePath -Path (Join-Path $installRoot 'known_hosts') -Purpose 'The pinned SSH host-key file'
 if (-not (Test-Path -LiteralPath $sshDirectory)) { New-Item -ItemType Directory -Path $sshDirectory -Force | Out-Null }
 $publicKeyPath = "$keyPath.pub"
 if (-not (Test-Path -LiteralPath $keyPath)) {
@@ -398,9 +326,6 @@ if ($LASTEXITCODE -ne 0) {
 if ((Get-XcodeCanonicalSshPublicKey -PublicKey $derivedPublicKey) -ne (Get-XcodeCanonicalSshPublicKey -PublicKey $publicKey)) {
     throw 'The existing xcode private key and public key do not match.'
 }
-$localVersion = [string](& $wezterm --version 2>$null | Select-Object -First 1)
-Assert-XcodeSupportedWezTermVersion -Version $localVersion
-
 if ($PairOnly) {
     if (-not (Test-Path -LiteralPath $officeSetupStatePath -PathType Leaf)) {
         throw 'This office laptop is not prepared. Run xcode setup office before xcode pair.'
@@ -420,35 +345,18 @@ if ($SetupOnly) {
 }
 
 $existingSshConfig = Join-Path $installRoot 'ssh_config'
-$existingWezTermConfig = Join-Path $installRoot 'office-wezterm.lua'
 $existingStatePath = Join-Path $installRoot 'client.json'
 if ((-not $PairOnly) -and (Test-XcodeSshConnection -SshExe $ssh -ConfigPath $existingSshConfig) -and
-    (Test-Path -LiteralPath $existingWezTermConfig) -and
     (Test-Path -LiteralPath $existingStatePath)) {
     try {
         $existingState = Get-Content -Raw -LiteralPath $existingStatePath | ConvertFrom-Json
-        if ([int]$existingState.schemaVersion -ne 2) { throw 'The installed office schema is outdated.' }
-        $existingLua = Get-Content -Raw -LiteralPath $existingWezTermConfig
+        if ([int]$existingState.schemaVersion -lt 2) { throw 'The installed office schema is outdated.' }
         $existingSshContent = Get-Content -Raw -LiteralPath $existingSshConfig
-        if ($existingLua -notmatch 'XCODE REMOTE MANAGED CONFIG' -or
-            $existingLua -notmatch "stricthostkeychecking = 'yes'" -or
-            $existingSshContent -notmatch '(?m)^\s*StrictHostKeyChecking yes\r?$') {
+        if ($existingSshContent -notmatch '(?m)^\s*StrictHostKeyChecking yes\r?$') {
             throw 'An installed office file no longer matches the managed security policy.'
         }
-        $existingRemoteProxy = [string]$existingState.remoteWezTermPath
-        if ($existingRemoteProxy -notmatch '^[A-Za-z]:/[A-Za-z0-9._/-]+\.cmd$') { throw 'The installed remote proxy path is invalid.' }
-        $remoteVersion = (& $ssh -F $existingSshConfig -o BatchMode=yes xcode-main ($existingRemoteProxy + ' --version') 2>$null | Out-String).Trim()
-        if ($LASTEXITCODE -ne 0 -or $remoteVersion -ne $localVersion.Trim()) {
-            throw "Existing WezTerm versions differ. Main: $remoteVersion; office: $localVersion"
-        }
-        $existingMux = (& $ssh -F $existingSshConfig -o BatchMode=yes xcode-main ($existingRemoteProxy + ' cli --prefer-mux list --format json') 2>$null | Out-String)
-        if ($LASTEXITCODE -ne 0 -or -not $existingMux.Trim().StartsWith('[')) { throw 'The installed host mux is unavailable.' }
-        Start-Process -FilePath $wezterm -ArgumentList @('--config-file', $existingWezTermConfig, 'connect', 'XCODE_MAIN') | Out-Null
-        Start-Sleep -Seconds 3
-        $existingApproval = Read-Host 'Existing pairing opened XCODE_MAIN. Does it show the main-PC workspace? [y/N]'
-        if ($existingApproval -notmatch '^[Yy]$') { throw 'The existing real attach was not confirmed.' }
         Remove-XcodePathEntry -Directory (Join-Path $installRoot 'bin')
-        Write-Host 'This office laptop is already paired; SSH, mux, and the real attach all work.' -ForegroundColor Green
+        Write-Host 'This office laptop is already paired; pinned SSH is working.' -ForegroundColor Green
         exit 0
     }
     catch {
@@ -486,8 +394,7 @@ for ($attempt = 1; $attempt -le 3 -and -not $session; $attempt++) {
         -Port $PairPort `
         -PairCode $pairCode `
         -PublicKey $publicKey `
-        -DeviceName ([string]$status.Self.HostName) `
-        -WezTermVersion $localVersion
+        -DeviceName ([string]$status.Self.HostName)
     if ($candidate.Ok) { $session = $candidate }
     else { Write-Warning "Pairing was rejected by the verified Tailscale peer ($($candidate.ErrorCode))." }
 }
@@ -496,7 +403,6 @@ if (-not $session) { throw 'Pairing failed after three attempts. Open a new pair
 $trackedPaths = @(
     (Join-Path $installRoot 'known_hosts'),
     (Join-Path $installRoot 'ssh_config'),
-    (Join-Path $installRoot 'office-wezterm.lua'),
     (Join-Path $installRoot 'client.json')
 )
 $snapshots = @{}
@@ -516,8 +422,7 @@ try {
         -LocalStatus $status `
         -PairCode (($pairCode -replace '[^0-9]', '')) `
         -PairAddress $pairAddressText `
-        -LocalPublicKey $publicKey `
-        -LocalWezTermVersion $localVersion
+        -LocalPublicKey $publicKey
 
     Write-Host ''
     Write-Host "Main-PC SSH fingerprint: $($validation.HostFingerprint)" -ForegroundColor Cyan
@@ -528,28 +433,12 @@ try {
         -Pairing $session.Response `
         -HostKey $validation.HostKey `
         -KeyPath $keyPath `
-        -WezTermPath $wezterm `
         -InstallRoot $installRoot
 
-    Write-XcodeStep 'Verifying pinned SSH, matching WezTerm, and the host mux'
+    Write-XcodeStep 'Verifying pinned, key-only SSH'
     if (-not (Test-XcodeSshConnection -SshExe $ssh -ConfigPath $files.SshConfig)) {
         throw 'Pinned, key-only SSH verification failed.'
     }
-    $remoteProxy = [string]$session.Response.remoteWezTermPath
-    $remoteVersion = (& $ssh -F $files.SshConfig -o BatchMode=yes xcode-main ($remoteProxy + ' --version') 2>&1 | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0 -or $remoteVersion -ne $localVersion.Trim()) {
-        throw "WezTerm versions differ. Main: $remoteVersion; office: $localVersion"
-    }
-    $remoteMux = (& $ssh -F $files.SshConfig -o BatchMode=yes xcode-main ($remoteProxy + ' cli --prefer-mux list --format json') 2>&1 | Out-String)
-    if ($LASTEXITCODE -ne 0 -or -not $remoteMux.Trim().StartsWith('[')) {
-        throw "The persistent host mux is unavailable:`n$remoteMux"
-    }
-
-    Write-XcodeStep 'Opening one real XCODE_MAIN window for final confirmation'
-    Start-Process -FilePath $wezterm -ArgumentList @('--config-file', $files.WezTermConfig, 'connect', 'XCODE_MAIN') | Out-Null
-    Start-Sleep -Seconds 3
-    $attachApproval = Read-Host 'Did the WezTerm window open and show the main-PC PowerShell workspace? [y/N]'
-    if ($attachApproval -notmatch '^[Yy]$') { throw 'The real WezTerm attach was not confirmed.' }
 
     $commitSent = $true
     Close-XcodePairSession -Session $session -Action commit -AuthorizedKeyFingerprint $validation.LocalFingerprint
@@ -580,5 +469,5 @@ Write-Host ''
 Write-Host 'Office laptop setup is complete.' -ForegroundColor Green
 Write-Host 'Open a NEW PowerShell window and run:'
 Write-Host '  xcode' -ForegroundColor Cyan
-Write-Host 'Use Ctrl+Shift+Alt+D to detach without terminating the shared panes.'
+Write-Host 'Use Ctrl+C to detach without changing the main-PC terminal.'
 Write-Host 'Diagnostics: xcode doctor    Emergency shell: xcode ssh'

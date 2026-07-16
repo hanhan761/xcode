@@ -1,61 +1,51 @@
-# Task Plan: Unified `xcode` Workflow
+# Task Plan: Existing Console Attachment
 
 ## Goal
 
-Deliver a GitHub-installable npm CLI whose role-aware `xcode` command owns setup, pairing, daily attachment and self-update while preserving the current secure pairing protocol.
+Replace the new-terminal-workspace model with a terminal-only relay that lets an office laptop intervene in a PowerShell/Codex CLI session already running on the controlled host.
 
 ## Current Phase
 
-Complete.
+Phase 4: real two-machine confirmation.
 
 ## Phases
 
-### Phase 1: Requirements and discovery
+### Phase 1: Reproduce the attachment-model mismatch
 
-- [x] Capture the desired interaction: both PCs use `xcode` for pairing.
-- [x] Map the current bootstrap, setup, pairing and daily-connect entry points.
-- [x] Record the compatibility and security constraints.
+- [x] Add a deterministic regression assertion for the old mux attachment.
+- [x] Run it red: `The xcode dispatcher cannot share the current host terminal.`
+- [x] Make it green with `xcode share` / office `xcode` relay commands.
 - **Status:** complete
 
-### Phase 2: Interface and implementation design
+### Phase 2: Console relay feasibility probe
 
-- [x] Define the small external command interface and role-specific behavior.
-- [x] Define npm as the official installation and update distribution channel.
-- [x] Add a repository-local `xcode` bootstrap dispatcher.
-- [x] Package the dispatcher as an npm global binary.
-- [x] Separate office dependency setup from office pairing.
+- [x] Read an existing Codex console via `CONOUT$` without changing it.
+- [x] Prove loopback snapshots and console input injection in an isolated hidden console.
+- [x] Validate text, Enter and Backspace input events.
 - **Status:** complete
 
-### Phase 3: Tests and documentation
+### Phase 3: Implement the no-GUI relay workflow
 
-- [x] Add regression coverage for every public command route.
-- [x] Update README to document only `xcode` commands.
+- [x] Start a same-console relay sidecar through `xcode share`.
+- [x] Render snapshots and return terminal keys through office `xcode`.
+- [x] Use the existing key-only SSH channel as a byte bridge, without SSH port forwarding or a new listener.
+- [x] Remove legacy WezTerm setup, pairing checks, configuration replacement and GUI confirmation.
 - **Status:** complete
 
 ### Phase 4: Verification and release
 
-- [x] Run tests in Windows PowerShell 5.1 and PowerShell 7.
-- [x] Verify npm package contents without publishing.
-- [x] Install the GitHub package in an isolated npm prefix and run its CLI.
-- [x] Review the diff, commit and push `main`.
-- **Status:** complete
+- [x] Run Windows PowerShell 5.1, PowerShell 7, Node syntax, package-content and isolated-console harness checks.
+- [x] Verify the dispatcher starts a current-console relay and returns a live snapshot.
+- [ ] Run one office-laptop attachment to the main PC after both machines update.
+- [ ] Commit and push the corrected implementation.
+- **Status:** in_progress
 
-## Decisions Made
+## Decisions
 
 | Decision | Rationale |
 |---|---|
-| Use `xcode setup main` / `xcode setup office` as the first-run interface | A Windows executable must exist before a PATH command can be installed; `./xcode` is still a single, named `xcode` entry point. |
-| Use role-aware `xcode pair` on both PCs | The same command has a simple intent; saved local role determines whether it opens or joins a pairing session. |
-| Keep setup separate from pairing | Dependency/UAC work is one-time; pairing is one-time per device and must be repeatable without reinstalling. |
-| Install from GitHub with npm, update through `xcode update` | The repository is the authorized release source today; no npm-registry publishing credentials are needed. |
-
-## Errors Encountered
-
-| Error | Attempt | Resolution |
-|---|---:|---|
-| None in this workflow refactor | — | — |
-| ACL/path cleanup patch did not match the current installer context | 1 | Inspect the current anchors, then apply a narrower patch. |
-| `xcode help` bound `help` as the optional repository path | 1 | Make the remaining command arguments position zero before optional named settings. |
-| Dispatcher parameter defaults cannot use `$PSScriptRoot` during binding | 1 | Resolve the default repository after parameter binding from `$PSCommandPath`. |
-| Help text omitted the newly implemented update command | 1 | Add `xcode update` to the public command reference. |
-| Batch replacement of legacy recovery messages did not match current script text | 1 | Inspect and replace each message using its current anchor. |
+| Share one selected existing Windows Console | It matches the current Codex/PowerShell process instead of starting a second conversation. |
+| Keep a loopback-only relay with a fresh token per share | No desktop stream and no new Tailscale/public listener are needed. |
+| Reuse SSH standard I/O as the bridge | Existing authorized keys deliberately prohibit TCP forwarding; standard I/O preserves that policy. |
+| Remove WezTerm from setup and pairing | The relay must not modify terminal-emulator configuration or create a new workspace. |
+| Keep one active target for now | Selecting a particular existing console is honest and safe; multi-console selection needs a separate state model. |

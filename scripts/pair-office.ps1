@@ -37,9 +37,7 @@ function Write-PairResponse {
 }
 
 $tailscale = Get-XcodeTailscaleExecutable
-$wezterm = Get-XcodeWezTermExecutable
 if (-not $tailscale) { throw 'Tailscale is not installed on the main PC.' }
-if (-not $wezterm) { throw 'WezTerm is not installed on the main PC.' }
 
 $machineStatePath = Join-Path $env:ProgramData 'XcodeRemote\host.json'
 $userStatePath = Join-Path $env:LOCALAPPDATA 'XcodeRemote\host-user.json'
@@ -69,14 +67,6 @@ $selfUserId = [string]$status.Self.UserID
 $mainNodeId = [string]$status.Self.ID
 $mainName = [string]$status.Self.HostName
 $dnsName = ([string]$status.Self.DNSName).TrimEnd('.')
-$weztermVersion = [string](& $wezterm --version 2>$null | Select-Object -First 1)
-Assert-XcodeSupportedWezTermVersion -Version $weztermVersion
-$remoteWezTermPath = [string]$machineState.remoteWezTermPath
-Assert-XcodeNoControlCharacters -Value $remoteWezTermPath -FieldName 'Remote WezTerm proxy path'
-if ($remoteWezTermPath -notmatch '^[A-Za-z]:/[A-Za-z0-9._/-]+\.cmd$' -or
-    -not (Test-Path -LiteralPath ($remoteWezTermPath -replace '/', '\'))) {
-    throw 'The trusted remote WezTerm proxy is missing or invalid. Rerun xcode setup main.'
-}
 
 $hostKeyPath = Join-Path $env:ProgramData 'ssh\ssh_host_ed25519_key.pub'
 if (-not (Test-Path -LiteralPath $hostKeyPath)) { throw 'The staged OpenSSH Ed25519 host key is missing.' }
@@ -154,22 +144,13 @@ try {
             $attempts++
 
             $submittedCode = ([string]$request.pairCode) -replace '[^0-9]', ''
-            if ([int]$request.protocolVersion -ne 2 -or $submittedCode -ne $pairCode) {
+            if ([int]$request.protocolVersion -ne 3 -or $submittedCode -ne $pairCode) {
                 Write-PairResponse -Writer $writer -Response @{ ok = $false; error = 'PAIR_CODE_INVALID' }
                 Write-Warning "Rejected pairing attempt $attempts from $remoteIp."
                 continue
             }
             $nonce = [string]$request.nonce
             if ($nonce -notmatch '^[0-9a-f]{32}$') { throw 'The pairing nonce is invalid.' }
-            $clientVersion = [string]$request.weztermVersion
-            Assert-XcodeNoControlCharacters -Value $clientVersion -FieldName 'Client WezTerm version'
-            if (-not $clientVersion -or $clientVersion.Length -gt 100) { throw 'The client WezTerm version is invalid.' }
-            if ($clientVersion.Trim() -ne $weztermVersion.Trim()) {
-                Write-PairResponse -Writer $writer -Response @{ ok = $false; error = 'WEZTERM_VERSION_MISMATCH'; mainVersion = $weztermVersion }
-                Write-Warning "Rejected mismatched WezTerm version. Main: $weztermVersion; office: $clientVersion"
-                continue
-            }
-
             $whois = Get-XcodeTailscaleWhois -Address $remoteIp
             if ([string]$whois.UserProfile.ID -ne $selfUserId) {
                 throw 'The requester is not owned by the same Tailscale user as the main PC.'
@@ -257,12 +238,10 @@ try {
                 -WindowsUser $ExpectedUser `
                 -HostKeyFingerprint $hostKeyFingerprint `
                 -AuthorizedKeyFingerprint $keyChange.Fingerprint `
-                -RequesterNodeId $deviceId `
-                -RemoteWezTermPath $remoteWezTermPath `
-                -WezTermVersion $weztermVersion
+                -RequesterNodeId $deviceId
             $response = [ordered]@{
                 ok = $true
-                protocolVersion = 2
+                protocolVersion = 3
                 nonce = $nonce
                 mainName = $mainName
                 mainNodeId = $mainNodeId
@@ -275,8 +254,6 @@ try {
                 authorizedKeyFingerprint = $keyChange.Fingerprint
                 requesterNodeId = $deviceId
                 requesterAddresses = $sourceAddresses
-                weztermVersion = $weztermVersion
-                remoteWezTermPath = $remoteWezTermPath
                 proof = $proof
             }
             Write-PairResponse -Writer $writer -Response $response
