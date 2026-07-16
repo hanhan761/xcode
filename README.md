@@ -1,20 +1,21 @@
 # xcode remote terminal
 
-让一台 Windows 办公本以纯终端方式接入主力机**已经在运行的一个 PowerShell / Codex CLI 控制台**。不使用远程桌面，不新建 PowerShell 会话，也不接管或修改 WezTerm、Windows Terminal 的配置。
+让一台 Windows 办公本以纯终端方式接入主力机**已经在运行的 PowerShell / Codex CLI 终端工作区**。不使用远程桌面，不新建 PowerShell 会话，也不接管或修改 WezTerm、Windows Terminal 的配置。
 
-办公本显示的是主力机当前控制台的实时屏幕，并把键盘输入写回同一个控制台。因此它可以继续当前的 Codex 对话，而不是开一个新的对话。
+主力机后台会发现同一 Windows 用户下已有和随后打开的终端；办公本先选择其中一个，再显示它的实时字符屏幕并把键盘输入写回**原来的那个控制台**。因此可以继续原有 Codex 对话，而不是开一个新的对话。
 
 ```mermaid
 flowchart LR
-    A[主力机：已有 PowerShell / Codex CLI 控制台] -->|同一 Windows Console| B[xcode relay sidecar]
-    B -->|读取 CONOUT$ / 写入 CONIN$| A
-    B -->|仅 127.0.0.1 随机端口 + 临时 token| C[SSH 字节桥接进程]
-    D[办公本：xcode 终端] ==>|固定主机密钥、专用 SSH key、Tailscale| C
+    A[主力机：已有与新开的 PowerShell / Codex 终端] --> B[xcode workspace broker]
+    B --> C[每个 Console 一个 relay sidecar]
+    C -->|读取 CONOUT$ / 写入 CONIN$| A
+    C -->|127.0.0.1 随机端口 + 临时 token| D[SSH 字节桥接]
+    E[办公本：xcode 终端选择器] ==>|固定主机密钥、专用 SSH key、Tailscale| D
 ```
 
 ## 日常使用
 
-主力机：在**要被接入的那个终端**里执行：
+主力机：首次日常使用时，在**任意一个普通 PowerShell** 中执行一次：
 
 ```powershell
 xcode
@@ -28,9 +29,9 @@ xcode
 # 或 xcode attach
 ```
 
-办公本按 `Ctrl+C` 仅断开本地画面；主力机的终端、其中运行的命令和 Codex 对话都会继续。
+若主力机有多个终端，办公本会显示编号列表。选择后即可正常对话；按 `Ctrl+G` 返回工作区列表并刷新，按 `Ctrl+C` 仅断开办公本画面。两种操作都不会结束主力机的终端、其中命令或 Codex 对话。
 
-如果目标是一个正在交互的 Codex CLI，会由 Codex 占用输入行，不能把 `xcode share` 当作普通 PowerShell 命令键入。此时让 Codex 在**当前终端**执行 `xcode share` 即可；不要在另一扇 PowerShell 窗口执行，否则共享的是另一扇窗口。
+主力机不需要在每个窗口执行 `xcode`。即使目标 Codex CLI 正在占用输入行，也可以在另一扇普通 PowerShell 启动一次工作区 broker；它不会创建新对话或改变已有窗口。
 
 ## 一次性安装与配对
 
@@ -75,10 +76,10 @@ xcode unpair  # 主力机：撤销已配对办公本
 - 办公本 SSH key 限制为其 Tailscale 地址，且关闭密码登录、代理/X11 转发与 TCP 端口转发。
 - 主力机中继只监听 `127.0.0.1`，端口随机且每次共享生成新的 256-bit token；不会对局域网或公网开放端口。
 - 办公本不使用 SSH `-L` 端口转发；它通过已验证 SSH 的标准输入/输出建立到主力机回环中继的字节桥接。
-- `xcode` 共享的是当次执行命令所在的一个 Windows Console。多个彼此独立的 PowerShell/Windows Terminal 窗口需要分别选择；当前版本一次只保留一个活动共享目标。
+- 主力机 broker 与各 relay 都只在当前 Windows 用户、同一会话下运行；无权限访问的提升权限或其他用户终端不会被静默接入。
 
 ## 已知限制
 
-这不是远程桌面，也不是完整终端模拟器。它镜像字符屏幕和键盘输入，适合 PowerShell、Codex CLI 等文本工作流；图形界面、鼠标操作、颜色属性、独立窗口的标签/分屏布局不会被远程重建。
+这不是远程桌面，也不是完整终端模拟器。它镜像字符屏幕和键盘输入，适合 PowerShell、Codex CLI 等文本工作流；图形界面、鼠标操作、颜色属性，以及 Windows Terminal 的标签/分屏布局不会被远程重建。
 
-Windows Console 的伪控制台机制必须在程序启动前创建，无法接管一个已经运行的控制台；本项目因此使用同一控制台内启动的轻量中继。有关这一边界可参考 Microsoft 的 [Pseudoconsole 文档](https://learn.microsoft.com/en-us/windows/console/pseudoconsoles) 和 [AttachConsole 文档](https://learn.microsoft.com/en-us/windows/console/attachconsole)。
+Windows Console 的伪控制台机制必须在程序启动前创建，无法接管一个已经运行的控制台；本项目改为让每个轻量 relay 附加到一个已有 Console。有关这一边界可参考 Microsoft 的 [Pseudoconsole 文档](https://learn.microsoft.com/en-us/windows/console/pseudoconsoles) 和 [AttachConsole 文档](https://learn.microsoft.com/en-us/windows/console/attachconsole)。

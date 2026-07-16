@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$StatePath,
-    [string]$DiagnosticPath = ''
+    [string]$DiagnosticPath = '',
+    [ValidateRange(1, [int]::MaxValue)][int]$TargetProcessId = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,6 +12,7 @@ Set-StrictMode -Version Latest
 if (-not ('XcodeConsoleRelayNative' -as [type])) {
     $source = @'
 using System;
+using System.Text;
 using System.Runtime.InteropServices;
 
 public sealed class XcodeConsoleRelaySnapshot {
@@ -41,6 +43,10 @@ public static class XcodeConsoleRelayNative {
 
     [DllImport("Kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)] public static extern IntPtr CreateFile(string name, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
     [DllImport("Kernel32.dll", SetLastError=true)] public static extern bool CloseHandle(IntPtr handle);
+    [DllImport("Kernel32.dll", SetLastError=true)] public static extern bool FreeConsole();
+    [DllImport("Kernel32.dll", SetLastError=true)] public static extern bool AttachConsole(uint processId);
+    [DllImport("Kernel32.dll", SetLastError=true)] public static extern uint GetConsoleProcessList([Out] uint[] processList, uint processCount);
+    [DllImport("Kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)] public static extern uint GetConsoleTitleW(StringBuilder title, uint size);
     [DllImport("Kernel32.dll", SetLastError=true)] public static extern bool GetConsoleScreenBufferInfo(IntPtr handle, out CONSOLE_SCREEN_BUFFER_INFO info);
     [DllImport("Kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)] public static extern bool ReadConsoleOutputW(IntPtr handle, [Out] CHAR_INFO[] buffer, COORD bufferSize, COORD bufferCoord, ref SMALL_RECT region);
     [DllImport("Kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)] public static extern bool WriteConsoleInputW(IntPtr handle, INPUT_RECORD[] buffer, uint length, out uint written);
@@ -49,6 +55,30 @@ public static class XcodeConsoleRelayNative {
         IntPtr handle = CreateFile(name, access, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
         if (handle.ToInt64() == -1) throw new InvalidOperationException(name + " unavailable: " + Marshal.GetLastWin32Error());
         return handle;
+    }
+
+    public static void AttachToProcessConsole(uint processId) {
+        FreeConsole();
+        if (!AttachConsole(processId)) throw new InvalidOperationException("AttachConsole failed: " + Marshal.GetLastWin32Error());
+    }
+
+    public static uint[] ProcessIds() {
+        uint[] processes = new uint[1024];
+        uint actual = GetConsoleProcessList(processes, (uint)processes.Length);
+        if (actual == 0) throw new InvalidOperationException("GetConsoleProcessList failed: " + Marshal.GetLastWin32Error());
+        if (actual > processes.Length) {
+            processes = new uint[actual];
+            actual = GetConsoleProcessList(processes, (uint)processes.Length);
+            if (actual == 0 || actual > processes.Length) throw new InvalidOperationException("GetConsoleProcessList failed: " + Marshal.GetLastWin32Error());
+        }
+        if (actual < processes.Length) Array.Resize(ref processes, (int)actual);
+        return processes;
+    }
+
+    public static string Title() {
+        StringBuilder title = new StringBuilder(1024);
+        GetConsoleTitleW(title, (uint)title.Capacity);
+        return title.ToString();
     }
 
     public static XcodeConsoleRelaySnapshot Snapshot() {
@@ -112,6 +142,12 @@ public static class XcodeConsoleRelayNative {
     Add-Type -TypeDefinition $source
 }
 
+if ($TargetProcessId) {
+    if ($TargetProcessId -eq $PID) { throw 'A console relay cannot attach to itself.' }
+    if (-not (Get-Process -Id $TargetProcessId -ErrorAction SilentlyContinue)) { throw "Target process $TargetProcessId is no longer running." }
+    [XcodeConsoleRelayNative]::AttachToProcessConsole([uint32]$TargetProcessId)
+}
+
 function New-XcodeRelayToken {
     $bytes = New-Object byte[] 32
     $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
@@ -139,11 +175,24 @@ $token = New-XcodeRelayToken
 $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
 $listener.Start()
 $port = ([Net.IPEndPoint]$listener.LocalEndpoint).Port
+$consoleProcessIds = $null
+$consoleTitle = ''
+try {
+    $consoleProcessIds = @([XcodeConsoleRelayNative]::ProcessIds() | ForEach-Object { [int]$_ } | Sort-Object)
+    $consoleTitle = [XcodeConsoleRelayNative]::Title()
+}
+catch {
+    Write-XcodeRelayDiagnostic -ErrorRecord $_
+    throw
+}
 $state = [ordered]@{
-    schemaVersion = 1
+    schemaVersion = 2
     port = $port
     token = $token
     agentProcessId = $PID
+    targetProcessId = if ($TargetProcessId) { $TargetProcessId } else { $PID }
+    consoleProcessIds = $consoleProcessIds
+    consoleTitle = $consoleTitle
     startedAt = (Get-Date).ToUniversalTime().ToString('o')
 }
 Write-XcodeUtf8File -Path $StatePath -Content ($state | ConvertTo-Json -Depth 4)

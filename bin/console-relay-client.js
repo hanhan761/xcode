@@ -3,6 +3,7 @@
 
 const { spawn, spawnSync } = require('node:child_process');
 const path = require('node:path');
+const readline = require('node:readline/promises');
 const { StringDecoder } = require('node:string_decoder');
 
 function fail(message) {
@@ -23,23 +24,27 @@ function encodedPowerShell(command) {
   return Buffer.from(`$ErrorActionPreference = 'Stop'; [Console]::OutputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [Console]::OutputEncoding; ${command}`, 'utf16le').toString('base64');
 }
 
-function remoteState(ssh, configPath) {
-  const command = "Get-Content -Raw -LiteralPath (Join-Path $env:LOCALAPPDATA 'XcodeRemote\\console-share.json')";
+function remoteWorkspace(ssh, configPath) {
+  const command = "Get-Content -Raw -LiteralPath (Join-Path $env:LOCALAPPDATA 'XcodeRemote\\console-workspace.json')";
   const result = spawnSync(ssh, ['-F', configPath, '-o', 'BatchMode=yes', 'xcode-main', 'powershell.exe', '-NoProfile', '-NonInteractive', '-EncodedCommand', encodedPowerShell(command)], {
     encoding: 'utf8',
     windowsHide: true,
   });
   if (result.error || result.status !== 0) {
-    throw new Error('No active shared terminal is reachable on the main PC. Run xcode share there first.');
+    throw new Error('No shared terminal workspace is reachable on the main PC. Run xcode there once.');
   }
   try {
-    const state = JSON.parse(result.stdout);
-    if (state.schemaVersion !== 1 || !Number.isInteger(state.port) || typeof state.token !== 'string') {
-      throw new Error('invalid state');
-    }
-    return state;
+    const workspace = JSON.parse(result.stdout);
+    if (workspace.schemaVersion !== 1 || !Array.isArray(workspace.sessions)) throw new Error('invalid workspace');
+    const sessions = workspace.sessions.filter((session) => (
+      typeof session.sessionId === 'string'
+      && Number.isInteger(session.port)
+      && typeof session.token === 'string'
+    ));
+    if (!sessions.length) throw new Error('empty workspace');
+    return sessions;
   } catch {
-    throw new Error('The main PC returned an invalid shared-terminal state. Run xcode share again.');
+    throw new Error('The main PC has no active PowerShell terminals to attach. Open one there and run xcode again.');
   }
 }
 
@@ -58,6 +63,31 @@ function render(snapshot) {
   const row = Math.max(1, Number(snapshot.cursorY) + 1);
   const column = Math.max(1, Number(snapshot.cursorX) + 1);
   process.stdout.write(`\x1b[?25l\x1b[2J\x1b[H${snapshot.rows}\x1b[${row};${column}H\x1b[?25h`);
+}
+
+function sessionLabel(session, index) {
+  const title = String(session.title || '').replace(/[\r\n]+/g, ' ').trim();
+  const shell = String(session.targetName || 'terminal').replace(/\.exe$/i, '');
+  return `${index + 1}. ${shell}  PID ${session.targetProcessId || '?'}${title ? `  ${title}` : ''}`;
+}
+
+async function chooseSession(ssh, configPath) {
+  const sessions = remoteWorkspace(ssh, configPath);
+  if (sessions.length === 1) return sessions[0];
+
+  process.stdout.write('\n主力机终端工作区：\n');
+  sessions.forEach((session, index) => process.stdout.write(`${sessionLabel(session, index)}\n`));
+  const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    while (true) {
+      const answer = (await prompt.question('选择终端编号（Ctrl+C 取消）： ')).trim();
+      const index = Number.parseInt(answer, 10) - 1;
+      if (Number.isInteger(index) && index >= 0 && index < sessions.length) return sessions[index];
+      process.stdout.write('请输入列表中的编号。\n');
+    }
+  } finally {
+    prompt.close();
+  }
 }
 
 const ANSI_KEYS = new Map([
@@ -115,35 +145,44 @@ function forwardInput(stream, state, input) {
   flushText();
 }
 
-async function main() {
-  const configPath = option('--ssh-config');
-  if (!configPath) fail('Office SSH configuration was not supplied. Run xcode pair again.');
-  const ssh = findSsh();
-  const state = remoteState(ssh, configPath);
-  const bridge = spawn(ssh, [
-    '-F', configPath,
-    '-o', 'BatchMode=yes',
-    'xcode-main',
-    'powershell.exe', '-NoProfile', '-NonInteractive', '-EncodedCommand', encodedPowerShell(remoteBridgeCommand(state.port)),
-  ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-
-  let rawMode = false;
-  let alternateScreen = false;
-  let closed = false;
-  const cleanup = () => {
-    if (closed) return;
-    closed = true;
-    if (rawMode && process.stdin.isTTY) process.stdin.setRawMode(false);
-    if (alternateScreen) process.stdout.write('\x1b[?25h\x1b[?1049l');
-    if (!bridge.killed) bridge.kill();
-  };
-  process.once('exit', cleanup);
-  process.once('SIGINT', () => process.exit(0));
-
-  try {
-    let pending = '';
+function attachToSession(ssh, configPath, session) {
+  return new Promise((resolve, reject) => {
+    const bridge = spawn(ssh, [
+      '-F', configPath,
+      '-o', 'BatchMode=yes',
+      'xcode-main',
+      'powershell.exe', '-NoProfile', '-NonInteractive', '-EncodedCommand', encodedPowerShell(remoteBridgeCommand(session.port)),
+    ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    let rawMode = false;
+    let alternateScreen = false;
+    let settled = false;
     let ready = false;
-    const readyTimeout = setTimeout(() => fail('The SSH bridge did not reach the shared terminal.'), 5000);
+    let bridgeError = '';
+    let pending = '';
+    const inputState = { decoder: new StringDecoder('utf8'), pending: '' };
+    const restoreTerminal = () => {
+      if (rawMode && process.stdin.isTTY) process.stdin.setRawMode(false);
+      rawMode = false;
+      if (alternateScreen) process.stdout.write('\x1b[?25h\x1b[?1049l');
+      alternateScreen = false;
+    };
+    const finish = (result, error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(readyTimeout);
+      process.stdin.off('data', onInput);
+      restoreTerminal();
+      if (!bridge.killed) bridge.kill();
+      if (error) reject(error);
+      else resolve(result);
+    };
+    const onInput = (input) => {
+      if (input.length === 1 && input[0] === 3) return finish('exit');
+      if (input.length === 1 && input[0] === 7) return finish('select');
+      forwardInput(bridge.stdin, inputState, input);
+    };
+    const readyTimeout = setTimeout(() => finish(null, new Error('The SSH bridge did not reach the selected terminal.')), 5000);
+
     bridge.stdout.setEncoding('utf8');
     bridge.stdout.on('data', (chunk) => {
       pending += chunk;
@@ -152,37 +191,43 @@ async function main() {
         const line = pending.slice(0, newline);
         pending = pending.slice(newline + 1);
         if (!line) continue;
-        const message = JSON.parse(line);
+        let message;
+        try { message = JSON.parse(line); }
+        catch { return finish(null, new Error('The main-PC terminal relay sent an invalid response.')); }
         if (message.type === 'ready') {
           ready = true;
           clearTimeout(readyTimeout);
-          return;
+        } else if (message.type === 'snapshot') {
+          render(message);
         }
-        if (message.type === 'snapshot') render(message);
       }
     });
     bridge.stderr.setEncoding('utf8');
-    let bridgeError = '';
     bridge.stderr.on('data', (chunk) => { bridgeError += chunk; });
     bridge.once('close', () => {
-      if (!closed) fail(ready ? 'The shared terminal disconnected.' : `The SSH bridge could not start. ${bridgeError.trim()}`.trim());
+      if (!settled) finish(null, new Error(ready ? 'The selected terminal disconnected.' : `The SSH bridge could not start. ${bridgeError.trim()}`.trim()));
     });
-    bridge.once('error', (error) => fail(error.message));
-    if (!process.stdin.isTTY) fail('xcode must be run from an interactive office-laptop terminal.');
+    bridge.once('error', (error) => finish(null, error));
+
     process.stdout.write('\x1b[?1049h');
     alternateScreen = true;
-    bridge.stdin.write(`${JSON.stringify({ token: state.token })}\n`);
+    bridge.stdin.write(`${JSON.stringify({ token: session.token })}\n`);
     process.stdin.setRawMode(true);
     rawMode = true;
     process.stdin.resume();
-    const inputState = { decoder: new StringDecoder('utf8'), pending: '' };
-    process.stdin.on('data', (input) => {
-      if (input.length === 1 && input[0] === 3) process.exit(0);
-      forwardInput(bridge.stdin, inputState, input);
-    });
-  } catch (error) {
-    cleanup();
-    fail(error.message);
+    process.stdin.on('data', onInput);
+  });
+}
+
+async function main() {
+  const configPath = option('--ssh-config');
+  if (!configPath) fail('Office SSH configuration was not supplied. Run xcode pair again.');
+  if (!process.stdin.isTTY) fail('xcode must be run from an interactive office-laptop terminal.');
+  const ssh = findSsh();
+  while (true) {
+    const session = await chooseSession(ssh, configPath);
+    const result = await attachToSession(ssh, configPath, session);
+    if (result === 'exit') return;
   }
 }
 

@@ -14,16 +14,16 @@ $RepositoryRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 
 function Show-XcodeUsage {
     Write-Host @"
-xcode - one shared PowerShell workspace
+xcode - one shared PowerShell terminal workspace
 
 First run from this repository:
   .\xcode setup main
   .\xcode setup office
 
 After setup:
-  xcode                 Share (main) or attach to (office) the current host terminal
-  xcode share           Start a relay for the current main-PC terminal
-  xcode attach          Attach an office laptop to the currently shared terminal
+  xcode                 Share (main) or attach to (office) the terminal workspace
+  xcode share           Start the main-PC terminal-workspace broker
+  xcode attach          Select and attach to a terminal in the main-PC workspace
   xcode pair [host]     Create (main) or join (office) a one-time pairing
   xcode status          Show this machine's xcode role and pairing state
   xcode doctor          Verify an office laptop's secure connection
@@ -52,15 +52,15 @@ function Get-XcodeOfficeState {
     return (Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json)
 }
 
-function Start-XcodeConsoleShare {
-    $shareScript = Join-Path $PSScriptRoot 'console-relay-host.ps1'
-    if (-not (Test-Path -LiteralPath $shareScript -PathType Leaf)) { throw 'The console relay host is missing. Run xcode update.' }
-    $statePath = Join-Path $env:LOCALAPPDATA 'XcodeRemote\console-share.json'
+function Start-XcodeWorkspaceShare {
+    $brokerScript = Join-Path $PSScriptRoot 'console-workspace-broker.ps1'
+    if (-not (Test-Path -LiteralPath $brokerScript -PathType Leaf)) { throw 'The terminal workspace broker is missing. Run xcode update.' }
+    $statePath = Join-Path $env:LOCALAPPDATA 'XcodeRemote\console-workspace.json'
     if (Test-Path -LiteralPath $statePath -PathType Leaf) {
         try {
             $existing = Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json
-            if ($existing.agentProcessId -and (Get-Process -Id ([int]$existing.agentProcessId) -ErrorAction SilentlyContinue)) {
-                Write-Host "This terminal is already shared. Office laptops can run xcode now." -ForegroundColor Green
+            if ($existing.brokerProcessId -and (Get-Process -Id ([int]$existing.brokerProcessId) -ErrorAction SilentlyContinue)) {
+                Write-Host "The terminal workspace is already shared. Office laptops can run xcode now." -ForegroundColor Green
                 return
             }
         }
@@ -69,15 +69,22 @@ function Start-XcodeConsoleShare {
     }
 
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $process = Start-Process -FilePath $powershell -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $shareScript, '-StatePath', $statePath) -NoNewWindow -PassThru
-    $deadline = (Get-Date).AddSeconds(5)
+    $process = Start-Process -FilePath $powershell -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $brokerScript, '-StatePath', $statePath) -WindowStyle Hidden -PassThru
+    $deadline = (Get-Date).AddSeconds(10)
     do {
         Start-Sleep -Milliseconds 100
-    } while (-not (Test-Path -LiteralPath $statePath -PathType Leaf) -and (Get-Date) -lt $deadline -and -not $process.HasExited)
-    if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
-        throw "The current terminal could not be shared (relay exit $($process.ExitCode))."
+        if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+            try {
+                $workspace = Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json
+                if (@($workspace.sessions).Count -gt 0) { break }
+            }
+            catch {}
+        }
+    } while ((Get-Date) -lt $deadline -and -not $process.HasExited)
+    if ($process.HasExited) {
+        throw "The terminal workspace broker could not start (exit $($process.ExitCode))."
     }
-    Write-Host 'This terminal is now shared. On the paired office laptop, run xcode.' -ForegroundColor Green
+    Write-Host 'This terminal workspace is now shared. Existing and newly opened PowerShell terminals are available on the paired office laptop with xcode.' -ForegroundColor Green
 }
 
 function Connect-XcodeOfficeSharedTerminal {
@@ -106,8 +113,8 @@ function Invoke-XcodeOfficeDoctor {
     Write-Host "`n[2/3] Key-only, pinned-host SSH"
     & $ssh -F $sshConfig -o BatchMode=yes xcode-main 'echo XCODE_SSH_OK'
     if ($LASTEXITCODE -ne 0) { throw 'Pinned SSH verification failed.' }
-    Write-Host "`n[3/3] Main-PC shared-terminal availability"
-    $remoteProbe = "if (-not (Test-Path -LiteralPath (Join-Path `$env:LOCALAPPDATA 'XcodeRemote\console-share.json'))) { exit 3 }"
+    Write-Host "`n[3/3] Main-PC terminal-workspace availability"
+    $remoteProbe = "`$path = Join-Path `$env:LOCALAPPDATA 'XcodeRemote\console-workspace.json'; if (-not (Test-Path -LiteralPath `$path)) { exit 3 }; `$workspace = Get-Content -Raw -LiteralPath `$path | ConvertFrom-Json; if (@(`$workspace.sessions).Count -lt 1) { exit 4 }"
     $encodedProbe = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($remoteProbe))
     & $ssh -F $sshConfig -o BatchMode=yes xcode-main powershell.exe -NoProfile -NonInteractive -EncodedCommand $encodedProbe
     if ($LASTEXITCODE -ne 0) { throw 'Shared-terminal availability verification failed.' }
@@ -154,9 +161,9 @@ switch ($installedRole) {
     'main' {
         switch ($verb) {
             '' {
-                Start-XcodeConsoleShare
+                Start-XcodeWorkspaceShare
             }
-            'share' { Start-XcodeConsoleShare }
+            'share' { Start-XcodeWorkspaceShare }
             'pair' {
                 if ($Command.Count -ne 1) { throw 'The main PC pairing command takes no host argument: xcode pair' }
                 & (Join-Path $PSScriptRoot 'pair-office.ps1')
