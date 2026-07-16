@@ -35,3 +35,4 @@
 - Main-PC `xcode` now starts this background broker once; it no longer requires a command in every target terminal.
 - Office `xcode` reads the catalog over the existing pinned SSH connection, lets the user select a terminal, and uses `Ctrl+G` to return and refresh the selector. `Ctrl+C` disconnects only the office view.
 - Passing regressions: `tests/verify.ps1` on Windows PowerShell 5.1 and PowerShell 7, `CONSOLE_RELAY_INPUT=PASS`, `NON_PARENT_CONSOLE_RELAY=PASS`, `MULTI_CONSOLE_WORKSPACE=PASS`, Node syntax check, dispatcher help, and `npm pack --dry-run` for `xcode-remote@1.2.0`.
+- Published to `origin/main` as `ea894c7 feat: share multi-console terminal workspace`.

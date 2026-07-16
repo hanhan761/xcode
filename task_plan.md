@@ -45,8 +45,8 @@ Phase 4: workflow, regression and release.
 - [x] Make main `xcode` start the broker once instead of sharing only its invoking Console.
 - [x] Update README and remove the single-console claim.
 - [x] Verify two isolated host Consoles, input routing, stale cleanup, PowerShell 5.1/7, Node syntax and package contents.
-- [ ] Commit, push, then perform office-laptop end-to-end validation.
-- **Status:** in_progress
+- [x] Commit and push the tested implementation; office-laptop end-to-end validation is the next user-facing check.
+- **Status:** complete
 
 ## Design decisions
 
