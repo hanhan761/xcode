@@ -50,7 +50,6 @@ codex
 codex resume --last
 ```
 
-也可以在主力机双击仓库根目录的 `3-resume-last-codex.cmd`：它会打开一个新的 PowerShell，并一键恢复最近一次已存档或退出的 Codex 对话。该窗口同样是可协作会话，办公本仍然直接执行 `xcode`。
 
 办公本打开 PowerShell，只需：
 
