@@ -22,4 +22,4 @@
 ### Remaining
 
 - Update both actual machines with `xcode update`, then test one office `xcode` attachment while the main terminal runs `xcode share`.
-- Commit and push after final local dispatcher sanity check.
+- Published `e3ef973 feat: attach office laptop to existing console` to `origin/main`.

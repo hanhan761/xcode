@@ -37,7 +37,7 @@ Phase 4: real two-machine confirmation.
 - [x] Run Windows PowerShell 5.1, PowerShell 7, Node syntax, package-content and isolated-console harness checks.
 - [x] Verify the dispatcher starts a current-console relay and returns a live snapshot.
 - [ ] Run one office-laptop attachment to the main PC after both machines update.
-- [ ] Commit and push the corrected implementation.
+- [x] Commit and push the corrected implementation (`e3ef973`).
 - **Status:** in_progress
 
 ## Decisions
