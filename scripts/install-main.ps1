@@ -60,17 +60,24 @@ return config
 function Write-XcodeMainLauncher {
     param(
         [Parameter(Mandatory = $true)][string]$WezTermPath,
-        [Parameter(Mandatory = $true)][string]$InstallRoot
+        [Parameter(Mandatory = $true)][string]$InstallRoot,
+        [Parameter(Mandatory = $true)][string]$PairingScriptPath
     )
     $binRoot = Join-Path $InstallRoot 'bin'
     if (-not (Test-Path -LiteralPath $binRoot)) { New-Item -ItemType Directory -Path $binRoot -Force | Out-Null }
-    $launcher = Join-Path $binRoot 'xcode-main.cmd'
+    $launcher = Join-Path $binRoot 'xcode.cmd'
     $content = @"
 @echo off
+if /I "%~1"=="pair" (
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PairingScriptPath"
+  exit /b %ERRORLEVEL%
+)
 "$WezTermPath" connect xcode-shared-mux
 exit /b %ERRORLEVEL%
 "@
     Write-XcodeUtf8File -Path $launcher -Content $content
+    $legacyLauncher = Join-Path $binRoot 'xcode-main.cmd'
+    Write-XcodeUtf8File -Path $legacyLauncher -Content "@echo off`r`ncall `"$launcher`" %*`r`nexit /b %ERRORLEVEL%`r`n"
     Add-XcodePathEntry -Directory $binRoot -Scope User | Out-Null
 }
 
@@ -140,7 +147,10 @@ Set-XcodeMainWezTermConfig -PowerShellPath $pwsh -Path $weztermConfig
 
 $userRoot = Join-Path $env:LOCALAPPDATA 'XcodeRemote'
 if (-not (Test-Path -LiteralPath $userRoot)) { New-Item -ItemType Directory -Path $userRoot -Force | Out-Null }
-Write-XcodeMainLauncher -WezTermPath $wezterm -InstallRoot $userRoot
+Write-XcodeMainLauncher `
+    -WezTermPath $wezterm `
+    -InstallRoot $userRoot `
+    -PairingScriptPath (Join-Path $PSScriptRoot 'pair-office.ps1')
 
 Start-Process -FilePath $wezterm -ArgumentList @('connect', 'xcode-shared-mux') | Out-Null
 $muxReady = $false

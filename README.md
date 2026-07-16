@@ -26,6 +26,23 @@
 5. 两边核对完全相同的 SSH 主机指纹。
 6. 安装器会实际打开一次 `XCODE_MAIN`。看到主力机的 PowerShell 工作区后输入 `y`，配对才会永久提交。
 
+## 日常只用一个命令
+
+主力机和办公本都使用 `xcode`，但它们附着到的是同一个终端工作区：
+
+```powershell
+# 主力机：回到本地 xcode-shared-mux，不改变其中的标签页和分屏
+xcode
+
+# 主力机：仅在新增办公本时生成一次性配对码
+xcode pair
+
+# 办公本：通过已配对的 SSH/WezTerm 附着到同一个工作区
+xcode
+```
+
+主力机也可直接双击 `pair-office.cmd` 打开配对窗口。日常所有 PowerShell 都继续在主力机既有的 WezTerm 工作区中以标签页和分屏方式创建；办公本只附着，不会新建另一套后端 shell。
+
 以后新开一个办公本 PowerShell，运行：
 
 ```powershell

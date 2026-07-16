@@ -137,9 +137,12 @@ Write-Host '5. Validate entry points, mux policy, and credential hygiene'
 $entries = @('install-main.cmd', 'install-office.cmd', 'pair-office.cmd', 'unpair-office.cmd')
 foreach ($entry in $entries) { Assert (Test-Path (Join-Path $root $entry)) "Missing $entry." }
 $officeScript = Get-Content -Raw (Join-Path $scripts 'install-office.ps1')
+$mainScript = Get-Content -Raw (Join-Path $scripts 'install-main.ps1')
 Assert ($officeScript -match "stricthostkeychecking = 'yes'") 'WezTerm strict host-key policy is missing.'
 Assert ($officeScript -match 'no_agent_auth = true') 'WezTerm is not using its dedicated identity deterministically.'
 Assert ($officeScript -notmatch "identitiesonly = 'yes'") 'The WezTerm config still disables agent behavior through the wrong option.'
+Assert ($mainScript -match '\$launcher = Join-Path \$binRoot ''xcode\.cmd''') 'The main PC does not install the xcode command.'
+Assert ($mainScript -match 'if /I "%~1"=="pair"') 'The main xcode command does not expose xcode pair.'
 $forbidden = 'tskey-|BEGIN OPENSSH PRIVATE KEY'
 $hits = Get-ChildItem $root -Recurse -File |
     Where-Object { $_.FullName -notmatch '\\.git\\' -and $_.FullName -ne $PSCommandPath } |
