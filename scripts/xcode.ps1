@@ -94,7 +94,32 @@ function Invoke-XcodeOfficeDoctor {
     if ($LASTEXITCODE -ne 0) { throw 'Managed-session availability verification failed.' }
 }
 
+function Get-XcodeActiveManagedSessionProcesses {
+    try {
+        return @(
+            Get-CimInstance Win32_Process -ErrorAction Stop |
+                Where-Object {
+                    $_.Name -ieq 'node.exe' -and
+                    [string]$_.CommandLine -match '(?i)xcode-remote[\\/]bin[\\/]managed-codex\.js'
+                } |
+                ForEach-Object {
+                    [pscustomobject]@{
+                        ProcessId = [int]$_.ProcessId
+                        CommandLine = [string]$_.CommandLine
+                    }
+                }
+        )
+    }
+    catch { return @() }
+}
+
 function Update-XcodePackage {
+    $activeManagedSessions = @(Get-XcodeActiveManagedSessionProcesses)
+    if ($activeManagedSessions.Count -gt 0) {
+        $processIds = ($activeManagedSessions.ProcessId -join ', ')
+        throw "xcode update is paused because $($activeManagedSessions.Count) managed Codex session(s) are active (Node PID: $processIds). Save them if needed, close their terminal tabs so managed-codex.js exits, then rerun xcode update. Windows cannot replace node-pty while those sessions are open."
+    }
+
     $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
     if (-not $npm) { $npm = Get-Command npm -ErrorAction SilentlyContinue }
     if (-not $npm) { throw 'npm is required for xcode update. Install Node.js 18 or newer, then run the command again.' }

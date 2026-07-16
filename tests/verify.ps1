@@ -177,6 +177,8 @@ Assert ($helpText -match 'xcode update') 'The xcode dispatcher does not expose s
 Assert ($helpText -match 'codex') 'The xcode dispatcher does not describe the preserved Codex command.'
 Assert ((Get-Content -Raw $dispatcher) -match 'Start-XcodeManagedCodex') 'The main PC does not start managed Codex sessions.'
 Assert ((Get-Content -Raw $dispatcher) -match 'Connect-XcodeOfficeSharedTerminal') 'Office xcode does not attach to the shared host terminal.'
+Assert ((Get-Content -Raw $dispatcher) -match 'Get-XcodeActiveManagedSessionProcesses') 'xcode update does not detect active managed sessions before invoking npm.'
+Assert ((Get-Content -Raw $dispatcher) -match 'Windows cannot replace node-pty') 'xcode update does not explain the native-module update lock.'
 Assert ($mainScript -notmatch 'session run --') 'The main-PC codex profile still emits a PowerShell-incompatible argument separator.'
 Assert ((Get-Content -Raw $nodeLauncher) -match 'PowerShell -File treats a bare') 'The npm launcher does not tolerate the legacy managed-session separator.'
 Assert ((Get-Content -Raw $sessionRunner) -match 'node-pty') 'The managed session runner does not use a private pseudoterminal.'
