@@ -93,7 +93,7 @@ Phase 6: publish the single-window repair and complete real two-device acceptanc
 
 ### Phase 6: Publish and real-device acceptance
 
-- [ ] Push the repaired package to GitHub.
+- [x] Push the repaired package to GitHub (`20230a3`).
 - [ ] Update both devices after closing active managed runners on the main PC.
 - [ ] Confirm on the paired office laptop that a message visibly reaches `Delivered` and appears in the existing main Codex conversation.
 - **Status:** in progress
