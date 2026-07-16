@@ -262,6 +262,26 @@ function Write-XcodeOfficeSetupFiles {
     Write-XcodeUtf8File -Path (Join-Path $InstallRoot 'office-setup.json') -Content ($setupState | ConvertTo-Json -Depth 4)
 }
 
+function Remove-XcodeMainRoleResidue {
+    param([Parameter(Mandatory = $true)][string]$InstallRoot)
+
+    $mainState = Join-Path $InstallRoot 'host-user.json'
+    if (Test-Path -LiteralPath $mainState -PathType Leaf) {
+        Remove-Item -LiteralPath $mainState -Force
+        Write-Host 'Removed a stale local main-PC role marker before preparing this office laptop.' -ForegroundColor Yellow
+    }
+
+    $profilePath = $PROFILE.CurrentUserAllHosts
+    if (-not (Test-Path -LiteralPath $profilePath -PathType Leaf)) { return }
+    $existing = Get-Content -Raw -LiteralPath $profilePath
+    $pattern = '(?s)# >>> xcode managed codex >>>.*?# <<< xcode managed codex <<<\s*'
+    $updated = [regex]::Replace($existing, $pattern, '')
+    if ($updated -ne $existing) {
+        Write-XcodeUtf8File -Path $profilePath -Content $updated.TrimEnd()
+        Write-Host 'Removed the main-PC Codex profile entrypoint from this office laptop.' -ForegroundColor Yellow
+    }
+}
+
 if (-not $PairOnly) {
     Write-XcodeStep 'Checking WinGet and required office-laptop software'
     $winget = Assert-XcodeWinget
@@ -307,6 +327,7 @@ $status = Wait-XcodeTailscaleOnline
 
 $installRoot = Join-Path $env:LOCALAPPDATA 'XcodeRemote'
 $officeSetupStatePath = Join-Path $installRoot 'office-setup.json'
+if (-not $PairOnly) { Remove-XcodeMainRoleResidue -InstallRoot $installRoot }
 $sshDirectory = Join-Path $env:USERPROFILE '.ssh'
 $keyPath = Join-Path $sshDirectory 'xcode_office_ed25519'
 if (-not (Test-Path -LiteralPath $sshDirectory)) { New-Item -ItemType Directory -Path $sshDirectory -Force | Out-Null }

@@ -37,8 +37,11 @@ function Get-XcodeInstalledRole {
     $installRoot = Join-Path $env:LOCALAPPDATA 'XcodeRemote'
     $mainState = Join-Path $installRoot 'host-user.json'
     $officeSetupState = Join-Path $installRoot 'office-setup.json'
+    $officeClientState = Join-Path $installRoot 'client.json'
+    # A machine explicitly prepared as an office laptop must not be shadowed
+    # by a stale user-level main-PC marker from an earlier mistaken setup.
+    if ((Test-Path -LiteralPath $officeClientState -PathType Leaf) -or (Test-Path -LiteralPath $officeSetupState -PathType Leaf)) { return 'office' }
     if (Test-Path -LiteralPath $mainState -PathType Leaf) { return 'main' }
-    if (Test-Path -LiteralPath $officeSetupState -PathType Leaf) { return 'office' }
     throw 'This PC has not been prepared for xcode. From the repository run .\xcode setup main or .\xcode setup office.'
 }
 

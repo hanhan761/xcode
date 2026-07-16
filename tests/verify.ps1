@@ -156,6 +156,7 @@ $sessionGateway = Join-Path $root 'bin\session-gateway.js'
 $sessionClient = Join-Path $root 'bin\session-client.js'
 $sessionRunner = Join-Path $root 'lib\session-runner.js'
 $sessionHarness = Join-Path $root 'tests\session-runner-harness.js'
+$roleHarness = Join-Path $root 'tests\role-resolution-harness.ps1'
 Assert (Test-Path -LiteralPath $dispatcher) 'The unified xcode dispatcher is missing.'
 Assert (Test-Path -LiteralPath $packagePath) 'The npm package manifest is missing.'
 Assert (Test-Path -LiteralPath $nodeLauncher) 'The npm xcode binary is missing.'
@@ -164,6 +165,7 @@ Assert (Test-Path -LiteralPath $sessionGateway) 'The forced xcode session gatewa
 Assert (Test-Path -LiteralPath $sessionClient) 'The office collaborative-session client is missing.'
 Assert (Test-Path -LiteralPath $sessionRunner) 'The managed session runner is missing.'
 Assert (Test-Path -LiteralPath $sessionHarness) 'The managed session harness is missing.'
+Assert (Test-Path -LiteralPath $roleHarness) 'The mixed-role resolution harness is missing.'
 $package = Get-Content -Raw -LiteralPath $packagePath | ConvertFrom-Json
 Assert ($package.name -eq 'xcode-remote') 'The npm package name is incorrect.'
 Assert ($package.bin.xcode -eq 'bin/xcode.js') 'npm does not expose the xcode command.'
@@ -207,6 +209,9 @@ Assert ($officeScript -notmatch 'office-wezterm\.lua') 'Office setup still creat
 Assert ($mainScript -notmatch 'wez\.wezterm') 'Main setup still installs WezTerm for the legacy mux.'
 Assert ($officeScript -notmatch 'wez\.wezterm') 'Office setup still installs WezTerm for the legacy mux.'
 Assert ($mainScript -match 'Install-XcodeCodexEntrypoint') 'Main setup does not preserve the codex command through the managed-session entrypoint.'
+Assert ($officeScript -match 'Remove-XcodeMainRoleResidue') 'Office setup does not remove stale local main-PC role residue.'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $roleHarness -RepositoryRoot $root
+Assert ($LASTEXITCODE -eq 0) 'Office role precedence failed when stale main-PC state was present.'
 Assert ((Get-Content -Raw (Join-Path $scripts 'XcodeRemote.Common.ps1')) -match 'xcode-gateway\.cmd') 'Paired SSH keys are not forced into the xcode gateway.'
 $originalSshCommand = $env:SSH_ORIGINAL_COMMAND
 try {
