@@ -488,6 +488,45 @@ function Set-XcodeAdministratorsAuthorizedKeysAcl {
     }
 }
 
+function New-XcodeOpenSshHostKeyAcl {
+    $admins = New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544')
+    $system = New-Object Security.Principal.SecurityIdentifier('S-1-5-18')
+    $acl = New-Object Security.AccessControl.FileSecurity
+    $acl.SetOwner($admins)
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($sid in @($admins, $system)) {
+        $rule = New-Object Security.AccessControl.FileSystemAccessRule(
+            $sid,
+            [Security.AccessControl.FileSystemRights]::FullControl,
+            [Security.AccessControl.AccessControlType]::Allow
+        )
+        [void]$acl.AddAccessRule($rule)
+    }
+    return $acl
+}
+
+function Set-XcodeOpenSshHostKeyAcl {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Set-Acl -LiteralPath $Path -AclObject (New-XcodeOpenSshHostKeyAcl)
+
+    $actual = Get-Acl -LiteralPath $Path
+    $admins = 'S-1-5-32-544'
+    $system = 'S-1-5-18'
+    $allowed = @($admins, $system)
+    $owner = $actual.GetOwner([Security.Principal.SecurityIdentifier]).Value
+    $unexpected = @($actual.Access | Where-Object {
+        $_.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or
+        $allowed -notcontains $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+    })
+    $present = @($actual.Access | ForEach-Object {
+        $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+    } | Select-Object -Unique)
+    if ($owner -ne $admins -or $unexpected.Count -ne 0 -or @($allowed | Where-Object { $present -notcontains $_ }).Count -ne 0 -or -not $actual.AreAccessRulesProtected) {
+        throw "The required SYSTEM/Administrators-only ACL could not be established on OpenSSH host key $Path."
+    }
+}
+
 function Write-XcodeAuthorizedKeysContent {
     param(
         [Parameter(Mandatory = $true)][string]$Path,

@@ -98,6 +98,18 @@ try {
     }
     Assert ($regressionFailures.Count -eq 0) ($regressionFailures -join ' ')
 
+    $hostKeyAcl = New-XcodeOpenSshHostKeyAcl
+    $adminsSid = New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544')
+    $systemSid = New-Object Security.Principal.SecurityIdentifier('S-1-5-18')
+    $expectedHostKeyAclSids = @($adminsSid.Value, $systemSid.Value)
+    Assert ($hostKeyAcl.AreAccessRulesProtected) 'OpenSSH host-key ACL inheritance was not disabled.'
+    Assert (($hostKeyAcl.GetOwner([Security.Principal.SecurityIdentifier])).Value -eq $adminsSid.Value) 'OpenSSH host-key ACL owner is not Administrators.'
+    $hostKeyAclSids = @($hostKeyAcl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | ForEach-Object {
+        $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+    } | Select-Object -Unique)
+    Assert (@($hostKeyAclSids | Where-Object { $_ -notin $expectedHostKeyAclSids }).Count -eq 0) 'OpenSSH host-key ACL grants an unexpected identity.'
+    Assert (@($expectedHostKeyAclSids | Where-Object { $hostKeyAclSids -notcontains $_ }).Count -eq 0) 'OpenSSH host-key ACL omits SYSTEM or Administrators.'
+
     $key = Join-Path $temp 'key'
     & ssh-keygen.exe -q -t ed25519 -N 'xcode-test-only' -f $key
     Assert ($LASTEXITCODE -eq 0) 'Could not create the temporary SSH fixture.'

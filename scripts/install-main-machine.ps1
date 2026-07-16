@@ -165,6 +165,14 @@ try {
     & $sshKeygen -A
     if ($LASTEXITCODE -ne 0) { throw 'OpenSSH host-key generation failed.' }
 
+    $hostKeys = @(Get-ChildItem -LiteralPath (Join-Path $env:ProgramData 'ssh') -File | Where-Object {
+        $_.Name -match '^ssh_host_.+_key$'
+    })
+    if ($hostKeys.Count -eq 0) { throw 'OpenSSH host-key generation did not produce any private host keys.' }
+    foreach ($hostKey in $hostKeys) {
+        Set-XcodeOpenSshHostKeyAcl -Path $hostKey.FullName
+    }
+
     $newConfig = New-XcodeSshdConfigContent `
         -OriginalContent $originalConfig `
         -AllowedUser $ExpectedUser `
