@@ -34,3 +34,30 @@
 
 - A terminal-only selector can present all sessions, but does not reproduce Windows Terminal tabs, pane geometry, mouse controls or colors.
 - Elevated or other-user Console targets must be reported as unavailable rather than silently captured.
+
+## Happy reference and security correction
+
+- The user asked to use Happy / Happy Coder as the reference model. Happy's documented workflow starts Codex or Claude through its own wrapper (`happy codex` / `happy claude`) and performs remote control through that named session rather than scanning every local terminal. It describes device switching and end-to-end encrypted remote access. [Happy README](https://github.com/slopus/happy/blob/main/README.md)
+- This is a materially better product boundary for xcode. The automatic broker exposed 13 same-user PowerShell/CMD sessions in a real run, including unrelated tool shells; a paired device could therefore select more than the user had deliberately approved.
+- The old pairing configuration also permits an interactive SSH shell. That may be acceptable for a trusted administration tool, but it is too broad for a session-control product. The replacement needs a session-scoped gateway or SSH forced command.
+- Forced termination of the broker left relay sidecars alive in test/diagnostic runs. The cleanup problem is now logged as a release blocker; the scanner remains stopped and must not be re-enabled as the default workflow.
+
+## Happy architecture details to adopt
+
+- Happy separates three roles: a local CLI/runner starts and observes the agent, a remote app renders and controls it, and a relay only transports encrypted blobs. The relay deliberately cannot read code or conversation data. [How Happy Works](https://happy.engineering/docs/how-it-works/)
+- Its documented security model uses a QR-established device secret, per-session encryption keys, authenticated challenge-response, and a self-hostable relay. The master secret does not leave the phone. [Happy Security & Encryption](https://happy.engineering/docs/security/)
+- Its core UX is named, isolated agent sessions that persist independently and can switch controllers. The corresponding xcode seams are `SessionRunner`, `EncryptedRelay`, `DeviceGrant`, and a collaborative `InputArbiter`.
+- Important migration constraint: Happy's documented Codex path is `happy codex`, a wrapper-started session. It does not justify claiming that every arbitrary already-running Windows terminal can be safely imported without explicit user approval. [Happy README](https://github.com/slopus/happy/blob/main/README.md)
+
+## Official Codex app-server investigation
+
+- Codex CLI 0.144.5 documents `codex --remote` and `codex resume --remote` for connecting a terminal UI to an app-server; the app-server owns Codex conversation history, approvals and streamed agent events. [Codex App Server](https://learn.chatgpt.com/docs/app-server.md)
+- The documented `codex remote-control` convenience command is not viable on this Windows main PC: `codex remote-control start --json` deterministically exits 1 with `codex app-server daemon lifecycle is only supported on Unix platforms`. Do not retry it on Windows.
+- The direct Windows-capable candidate is a loopback-only `codex app-server --listen ws://127.0.0.1:PORT` with capability-token authentication, reached from the office laptop only through a narrowly permitted SSH/VPN path. Official guidance explicitly says not to expose app-server transports directly to shared/public networks.
+- A direct native `codex.exe app-server` probe on Windows successfully bound to `127.0.0.1:57821`; the temporary listener was then stopped and rechecked as absent. It was never exposed to the LAN or Tailscale network.
+- npm's `codex.cmd` launcher is unsuitable for service lifecycle management: it starts `node.exe`, which then starts native `codex.exe`, and the wrapper parent can exit while both children remain. Any future app-server adapter must locate and launch the native executable directly, own its token file, and verify that shutdown removed the listener.
+- The generated Codex app-server schema has explicit `thread/list`, `thread/read`, `thread/resume`, `thread/fork`, and turn APIs. That makes app-server the correct seam for shared Codex progress; it does not make the legacy Windows-console scanner safe or necessary.
+- Upstream's current peer-client co-presence RFC reports the same crucial limitation: a separate client can resume a stored thread, but stock app-server did not reliably fan out live normal-TUI turns or render app-server-originated turns back in the active TUI. This is evidence against promising transparent live capture of an arbitrary normal `codex` process. [Upstream RFC](https://github.com/openai/codex/issues/21551)
+- The retained product contract is therefore `codex` on the main PC and `xcode` on the office laptop. The command name stays `codex`, but new or resumed sessions become explicitly managed at launch; `xcode` controls only these named sessions. The complete module and security design is in `docs/codex-session-handoff.md`.
+- The user clarified that xcode is a collaborator, not a terminal takeover: it must observe the main PC's Codex progress and contribute messages to the same conversation while the main PC continues working. The replacement boundary is therefore an `InputArbiter` that serializes complete messages, rather than an exclusive `ControlLease`.
+- A clean temporary Windows probe of `node-pty@1.1.0` succeeded with its bundled x64 ConPTY build: it spawned a PTY child, delivered ANSI output including the probe marker, and reported the expected exit code. This is a viable `SessionRunner` foundation without `AttachConsole` scanning. The production package must still assess its roughly 15.5 MB compressed dependency cost and lifecycle behavior before adopting it.

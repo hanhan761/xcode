@@ -3,7 +3,9 @@ param(
     [Parameter(Mandatory = $true)][ValidatePattern('^S-1-5-')][string]$ExpectedSid,
     [Parameter(Mandatory = $true)][string]$ExpectedUser,
     [Parameter(Mandatory = $true)][ValidatePattern('^100\.')][string]$TailscaleIPv4,
-    [ValidatePattern('^[A-Za-z0-9-]+$')][string]$MainName = 'xcode-main'
+    [ValidatePattern('^[A-Za-z0-9-]+$')][string]$MainName = 'xcode-main',
+    [Parameter(Mandatory = $true)][string]$NodePath,
+    [Parameter(Mandatory = $true)][string]$GatewayScript
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,6 +14,19 @@ $ErrorActionPreference = 'Stop'
 Assert-XcodeElevatedIdentity -ExpectedSid $ExpectedSid -ExpectedUser $ExpectedUser
 if ($ExpectedUser -notmatch '^[A-Za-z0-9._@\-]+$') {
     throw "The Windows username is not supported by this installer: $ExpectedUser"
+}
+if (-not (Test-Path -LiteralPath $NodePath -PathType Leaf)) { throw 'The supplied Node.js executable path is missing.' }
+if (-not (Test-Path -LiteralPath $GatewayScript -PathType Leaf)) { throw 'The supplied xcode gateway script is missing.' }
+
+function Write-XcodeGatewayLauncher {
+    $programDataRoot = Join-Path $env:ProgramData 'XcodeRemote'
+    if (-not (Test-Path -LiteralPath $programDataRoot)) { New-Item -ItemType Directory -Path $programDataRoot -Force | Out-Null }
+    $launcherPath = Join-Path $programDataRoot 'xcode-gateway.cmd'
+    $content = "@echo off`r`n`"$NodePath`" `"$GatewayScript`"`r`n"
+    Write-XcodeUtf8File -Path $launcherPath -Content $content
+    & icacls.exe $launcherPath /inheritance:r /grant:r 'SYSTEM:F' 'Administrators:F' "$ExpectedUser`:RX" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Could not protect the xcode SSH gateway launcher.' }
+    return $launcherPath
 }
 
 $capabilityName = 'OpenSSH.Server~~~~0.0.1.0'
@@ -114,6 +129,8 @@ function New-OwnedFirewallRule {
 
 try {
     Write-XcodeStep 'Staging a Tailscale-only, key-only SSH service'
+    $gatewayLauncher = Write-XcodeGatewayLauncher
+    [void](Update-XcodeManagedAuthorizedKeyGateway)
     if ($service.Status -eq 'Running') { Stop-Service -Name sshd -Force }
     Set-Service -Name sshd -StartupType Manual
     & sc.exe config sshd depend= ($desiredDependencies -join '/')
@@ -194,6 +211,7 @@ try {
         previousServiceWasRunning = $previousWasRunning
         pendingFirstPair = -not ($alreadyManaged -and $previousWasRunning)
         configuredAt = (Get-Date).ToUniversalTime().ToString('o')
+        gatewayLauncher = $gatewayLauncher
     }
     Write-XcodeUtf8File -Path (Join-Path $programDataRoot 'host.json') -Content ($state | ConvertTo-Json -Depth 5)
 

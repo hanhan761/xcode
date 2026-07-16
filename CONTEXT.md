@@ -1,30 +1,48 @@
-# Remote Existing-Console Context
+# Xcode Remote Context
 
-This project attaches an authorized Windows office laptop to the existing PowerShell and Codex CLI terminal workspace on a Windows main PC.
+This project lets a paired Windows office laptop collaborate in a Codex
+conversation running on a Windows main PC. It is terminal-only: no desktop
+streaming and no general remote PowerShell shell.
 
 ## Language
 
-**Controlled host**:
-The Windows main PC that owns the existing console and its processes.
-_Avoid_: server, remote computer, slave
+**Main PC**:
+The Windows machine that owns the Codex process, working directory and local
+terminal UI.
+_Avoid_: server, slave, controlled host.
 
-**Control machine**:
-An authorized office laptop that renders and controls the host-owned console.
-_Avoid_: client when referring to the device itself
+**Office laptop**:
+The paired Windows device from which the user observes and contributes to a
+main-PC Codex conversation.
+_Avoid_: controller, client when referring to the physical device.
 
-**Terminal workspace**:
-The discoverable existing Windows Consoles under the controlled host's current Windows user and session. One background broker maintains a catalog; it does not create a shell or Codex conversation.
-_Avoid_: mux, new session, remote desktop
+**Managed Codex session**:
+One Codex child started or resumed by `SessionRunner` in a private Windows
+pseudoterminal. It has an opaque session id, output snapshot and explicit
+device grants.
+_Avoid_: terminal workspace, arbitrary existing console.
 
-**Relay sidecar**:
-A PowerShell process attached to exactly one original Console. It listens only on the host loopback interface and owns the short-lived token.
+**SessionRunner**:
+The deep module that owns exactly one managed Codex child, fans output to local
+and remote observers, and owns its lifetime.
+_Avoid_: broker when referring to process discovery.
 
-**Workspace broker**:
-The background controlled-host process started by `xcode`. It discovers shell roots, runs one relay per Console, and writes the catalog used by the office selector.
+**InputArbiter**:
+The policy within `SessionRunner` that serializes complete remote messages with
+local terminal input. It supports collaboration, not terminal takeover, and
+must never interleave two devices' keystrokes.
+
+**Device grant**:
+A long-lived, revocable record created through one-time pairing. It authorizes
+only the xcode session protocol for one named office laptop; it is not a
+general SSH login.
+
+**Session gateway**:
+The forced-command SSH endpoint that exposes permitted session metadata and
+byte/message frames to a paired office laptop. It must not execute arbitrary
+host commands.
 
 **Attachment**:
-One temporary terminal-only office connection to a selected catalog entry. Losing it does not end the original Console or its current Codex/PowerShell process.
-
-**Pairing window**:
-A short-lived, one-use host listener that registers one verified control-machine public key after local approval.
-_Avoid_: login server, permanent registration endpoint
+An office laptop's observing connection to one managed session. It may submit
+messages through `InputArbiter`; it does not take ownership of the main PC's
+keyboard or desktop.

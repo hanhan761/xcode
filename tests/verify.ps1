@@ -143,7 +143,7 @@ Assert ($first -match '(?m)^PasswordAuthentication no\r?$') 'Password authentica
 Assert ($first -match 'Subsystem sftp sftp-server.exe') 'An unmanaged SSH directive was lost.'
 Assert (([regex]::Matches($first, 'BEGIN XCODE REMOTE MANAGED BLOCK')).Count -eq 1) 'SSH managed block was duplicated.'
 
-Write-Host '5. Validate entry points, mux policy, and credential hygiene'
+Write-Host '5. Validate collaborative-session entry points and credential hygiene'
 $entries = @('xcode.cmd', 'install-main.cmd', 'install-office.cmd', 'pair-office.cmd', 'unpair-office.cmd')
 foreach ($entry in $entries) { Assert (Test-Path (Join-Path $root $entry)) "Missing $entry." }
 $officeScript = Get-Content -Raw (Join-Path $scripts 'install-office.ps1')
@@ -151,50 +151,41 @@ $mainScript = Get-Content -Raw (Join-Path $scripts 'install-main.ps1')
 $dispatcher = Join-Path $scripts 'xcode.ps1'
 $packagePath = Join-Path $root 'package.json'
 $nodeLauncher = Join-Path $root 'bin\xcode.js'
-$relayHost = Join-Path $scripts 'console-relay-host.ps1'
-$workspaceBroker = Join-Path $scripts 'console-workspace-broker.ps1'
-$relayClient = Join-Path $root 'bin\console-relay-client.js'
-$relayHarness = Join-Path $root 'tests\console-relay-harness.ps1'
-$relayAttachHarness = Join-Path $root 'tests\console-relay-attach-harness.ps1'
-$workspaceHarness = Join-Path $root 'tests\workspace-broker-harness.ps1'
+$managedRunner = Join-Path $root 'bin\managed-codex.js'
+$sessionGateway = Join-Path $root 'bin\session-gateway.js'
+$sessionClient = Join-Path $root 'bin\session-client.js'
+$sessionRunner = Join-Path $root 'lib\session-runner.js'
+$sessionHarness = Join-Path $root 'tests\session-runner-harness.js'
 Assert (Test-Path -LiteralPath $dispatcher) 'The unified xcode dispatcher is missing.'
 Assert (Test-Path -LiteralPath $packagePath) 'The npm package manifest is missing.'
 Assert (Test-Path -LiteralPath $nodeLauncher) 'The npm xcode binary is missing.'
-Assert (Test-Path -LiteralPath $relayHost) 'The host console relay is missing.'
-Assert (Test-Path -LiteralPath $workspaceBroker) 'The host workspace broker is missing.'
-Assert (Test-Path -LiteralPath $relayClient) 'The office console relay client is missing.'
-Assert (Test-Path -LiteralPath $relayHarness) 'The isolated console relay harness is missing.'
-Assert (Test-Path -LiteralPath $relayAttachHarness) 'The non-parent console relay harness is missing.'
-Assert (Test-Path -LiteralPath $workspaceHarness) 'The multi-console workspace harness is missing.'
+Assert (Test-Path -LiteralPath $managedRunner) 'The managed Codex entrypoint is missing.'
+Assert (Test-Path -LiteralPath $sessionGateway) 'The forced xcode session gateway is missing.'
+Assert (Test-Path -LiteralPath $sessionClient) 'The office collaborative-session client is missing.'
+Assert (Test-Path -LiteralPath $sessionRunner) 'The managed session runner is missing.'
+Assert (Test-Path -LiteralPath $sessionHarness) 'The managed session harness is missing.'
 $package = Get-Content -Raw -LiteralPath $packagePath | ConvertFrom-Json
 Assert ($package.name -eq 'xcode-remote') 'The npm package name is incorrect.'
 Assert ($package.bin.xcode -eq 'bin/xcode.js') 'npm does not expose the xcode command.'
 $helpText = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $dispatcher help | Out-String)
-Assert ($LASTEXITCODE -eq 0 -and $helpText -match 'xcode setup main') 'The xcode dispatcher does not expose the setup workflow.'
+Assert ($LASTEXITCODE -eq 0 -and $helpText -match 'xcode main') 'The xcode dispatcher does not expose the main-PC setup workflow.'
+Assert ($helpText -match 'xcode office') 'The xcode dispatcher does not expose the office-laptop setup workflow.'
 Assert ($helpText -match 'xcode pair') 'The xcode dispatcher does not expose the paired workflow.'
 Assert ($helpText -match 'xcode update') 'The xcode dispatcher does not expose self-update.'
-Assert ($helpText -match 'xcode share') 'The xcode dispatcher cannot share the current host terminal.'
-Assert ((Get-Content -Raw $dispatcher) -match 'Start-XcodeWorkspaceShare') 'The main xcode command does not start the workspace broker.'
-$mainAttachBlock = [regex]::Match((Get-Content -Raw $dispatcher), "'main' \{[\s\S]*?'office' \{").Value
-Assert ($mainAttachBlock -notmatch 'connect xcode-shared-mux') 'Main xcode still opens a new mux instead of sharing the current terminal.'
+Assert ($helpText -match 'codex') 'The xcode dispatcher does not describe the preserved Codex command.'
+Assert ((Get-Content -Raw $dispatcher) -match 'Start-XcodeManagedCodex') 'The main PC does not start managed Codex sessions.'
 Assert ((Get-Content -Raw $dispatcher) -match 'Connect-XcodeOfficeSharedTerminal') 'Office xcode does not attach to the shared host terminal.'
-Assert ((Get-Content -Raw $relayHost) -match '\[Net\.IPAddress\]::Loopback') 'The host console relay is not restricted to loopback.'
-Assert ((Get-Content -Raw $relayHost) -match 'TargetProcessId') 'The host relay cannot attach to an existing non-parent console.'
-Assert ((Get-Content -Raw $workspaceBroker) -match 'console-workers') 'The broker does not maintain isolated relay workers.'
-Assert ((Get-Content -Raw $workspaceBroker) -match 'consoleProcessIds') 'The broker does not deduplicate processes in one Console.'
-Assert ((Get-Content -Raw $relayHost) -match 'WriteConsoleInputW') 'The host console relay cannot deliver input to the owning console.'
-Assert ((Get-Content -Raw $relayHost) -match 'WriteVirtualKey') 'The host console relay cannot deliver terminal navigation keys.'
-Assert ((Get-Content -Raw $relayClient) -match 'TcpClient') 'The office relay does not bridge to the host loopback relay.'
-Assert ((Get-Content -Raw $relayClient) -notmatch "'-L'") 'The office relay weakens the paired SSH key policy with port forwarding.'
-Assert ((Get-Content -Raw $relayClient) -match 'ANSI_KEYS') 'The office relay does not translate terminal navigation keys.'
-Assert ((Get-Content -Raw $relayClient) -match 'remoteWorkspace') 'The office relay does not fetch the terminal-workspace catalog.'
-Assert ((Get-Content -Raw $relayClient) -match 'chooseSession') 'The office relay does not offer terminal selection.'
-Assert ((Get-Content -Raw $relayClient) -match 'input\[0\] === 7') 'The office relay cannot return to the terminal selector.'
+Assert ((Get-Content -Raw $sessionRunner) -match 'node-pty') 'The managed session runner does not use a private pseudoterminal.'
+Assert ((Get-Content -Raw $sessionRunner) -match 'xcode-session-') 'The managed session runner does not create a scoped session pipe.'
+Assert ((Get-Content -Raw $sessionGateway) -match 'SSH_ORIGINAL_COMMAND') 'The gateway does not enforce the original SSH command boundary.'
+Assert ((Get-Content -Raw $sessionGateway) -match 'xcode-gateway') 'The gateway does not restrict its command vocabulary.'
+Assert ((Get-Content -Raw $sessionClient) -match "'attach'") 'The office client does not attach to a managed session.'
+Assert ((Get-Content -Raw $sessionClient) -match "'message'") 'The office client does not submit collaborative messages.'
 $nodeHelpText = (& node.exe $nodeLauncher help | Out-String)
-Assert ($LASTEXITCODE -eq 0 -and $nodeHelpText -match 'xcode setup office') 'The npm xcode binary cannot launch the dispatcher.'
+Assert ($LASTEXITCODE -eq 0 -and $nodeHelpText -match 'xcode office') 'The npm xcode binary cannot launch the dispatcher.'
 Assert ((Get-Content -Raw (Join-Path $root 'xcode.cmd')) -match 'scripts\\xcode\.ps1') 'The repository xcode bootstrap does not use the dispatcher.'
-Assert ((Get-Content -Raw (Join-Path $root 'install-main.cmd')) -match 'xcode\.cmd" setup main') 'The legacy main adapter does not route through xcode setup.'
-Assert ((Get-Content -Raw (Join-Path $root 'install-office.cmd')) -match 'xcode\.cmd" setup office') 'The legacy office adapter does not route through xcode setup.'
+Assert ((Get-Content -Raw (Join-Path $root 'install-main.cmd')) -match 'xcode\.cmd" main') 'The main adapter does not route through xcode main.'
+Assert ((Get-Content -Raw (Join-Path $root 'install-office.cmd')) -match 'xcode\.cmd" office') 'The office adapter does not route through xcode office.'
 Assert ((Get-Content -Raw (Join-Path $root 'pair-office.cmd')) -match 'xcode\.cmd" pair') 'The legacy pairing adapter does not route through xcode pair.'
 Assert ($officeScript -match '\[switch\]\$SetupOnly') 'The office setup cannot be run independently of pairing.'
 Assert ($officeScript -match '\[switch\]\$PairOnly') 'The office pairing client cannot be run independently of setup.'
@@ -203,6 +194,27 @@ Assert ($officeScript -match '(?m)^\s*IdentitiesOnly yes') 'Office SSH is not us
 Assert ($officeScript -notmatch 'office-wezterm\.lua') 'Office setup still creates a WezTerm workspace configuration.'
 Assert ($mainScript -notmatch 'wez\.wezterm') 'Main setup still installs WezTerm for the legacy mux.'
 Assert ($officeScript -notmatch 'wez\.wezterm') 'Office setup still installs WezTerm for the legacy mux.'
+Assert ($mainScript -match 'Install-XcodeCodexEntrypoint') 'Main setup does not preserve the codex command through the managed-session entrypoint.'
+Assert ((Get-Content -Raw (Join-Path $scripts 'XcodeRemote.Common.ps1')) -match 'xcode-gateway\.cmd') 'Paired SSH keys are not forced into the xcode gateway.'
+$originalSshCommand = $env:SSH_ORIGINAL_COMMAND
+try {
+    $env:SSH_ORIGINAL_COMMAND = 'xcode-gateway probe'
+    $gatewayProbe = (& node.exe $sessionGateway 2>&1 | Out-String)
+    Assert ($LASTEXITCODE -eq 0 -and $gatewayProbe -match '^XCODE_GATEWAY_OK') 'The xcode gateway did not accept its probe command.'
+    $env:SSH_ORIGINAL_COMMAND = 'powershell.exe -NoProfile'
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & node.exe $sessionGateway 2>$null
+        $deniedExitCode = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $previousErrorActionPreference }
+    Assert ($deniedExitCode -ne 0) 'The xcode gateway accepted an arbitrary SSH command.'
+}
+finally {
+    if ($null -eq $originalSshCommand) { Remove-Item Env:\SSH_ORIGINAL_COMMAND -ErrorAction SilentlyContinue }
+    else { $env:SSH_ORIGINAL_COMMAND = $originalSshCommand }
+}
 Assert ($mainScript -match 'Remove-XcodePathEntry') 'The main PC does not clear the legacy local xcode launcher.'
 Assert ([regex]::Match((Get-Content -Raw $dispatcher), 'function Update-XcodePackage \{[\s\S]*?\n\}').Value -match 'Remove-XcodePathEntry') 'xcode update does not remove the legacy local launcher from PATH.'
 Assert ((Get-Content -Raw $dispatcher) -match "github:hanhan761/xcode#main") 'xcode update does not use the GitHub release source.'

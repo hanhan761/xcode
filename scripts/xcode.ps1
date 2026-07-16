@@ -14,20 +14,18 @@ $RepositoryRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 
 function Show-XcodeUsage {
     Write-Host @"
-xcode - one shared PowerShell terminal workspace
+xcode - collaborative Codex sessions
 
 First run from this repository:
-  .\xcode setup main
-  .\xcode setup office
+  xcode main                 Set up this main PC and open office pairing
+  xcode office               Set up this office laptop and complete pairing
 
 After setup:
-  xcode                 Share (main) or attach to (office) the terminal workspace
-  xcode share           Start the main-PC terminal-workspace broker
-  xcode attach          Select and attach to a terminal in the main-PC workspace
+  codex                 Main PC: start or resume a collaborative Codex session
+  xcode                 Office laptop: observe and send messages to a Codex session
   xcode pair [host]     Create (main) or join (office) a one-time pairing
   xcode status          Show this machine's xcode role and pairing state
   xcode doctor          Verify an office laptop's secure connection
-  xcode ssh             Open an emergency SSH shell from an office laptop
   xcode unpair          Remove an office-laptop key from the main PC
   xcode update          Install the latest xcode release from GitHub
 "@
@@ -52,47 +50,22 @@ function Get-XcodeOfficeState {
     return (Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json)
 }
 
-function Start-XcodeWorkspaceShare {
-    $brokerScript = Join-Path $PSScriptRoot 'console-workspace-broker.ps1'
-    if (-not (Test-Path -LiteralPath $brokerScript -PathType Leaf)) { throw 'The terminal workspace broker is missing. Run xcode update.' }
-    $statePath = Join-Path $env:LOCALAPPDATA 'XcodeRemote\console-workspace.json'
-    if (Test-Path -LiteralPath $statePath -PathType Leaf) {
-        try {
-            $existing = Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json
-            if ($existing.brokerProcessId -and (Get-Process -Id ([int]$existing.brokerProcessId) -ErrorAction SilentlyContinue)) {
-                Write-Host "The terminal workspace is already shared. Office laptops can run xcode now." -ForegroundColor Green
-                return
-            }
-        }
-        catch {}
-        Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
-    }
-
-    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $process = Start-Process -FilePath $powershell -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $brokerScript, '-StatePath', $statePath) -WindowStyle Hidden -PassThru
-    $deadline = (Get-Date).AddSeconds(10)
-    do {
-        Start-Sleep -Milliseconds 100
-        if (Test-Path -LiteralPath $statePath -PathType Leaf) {
-            try {
-                $workspace = Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json
-                if (@($workspace.sessions).Count -gt 0) { break }
-            }
-            catch {}
-        }
-    } while ((Get-Date) -lt $deadline -and -not $process.HasExited)
-    if ($process.HasExited) {
-        throw "The terminal workspace broker could not start (exit $($process.ExitCode))."
-    }
-    Write-Host 'This terminal workspace is now shared. Existing and newly opened PowerShell terminals are available on the paired office laptop with xcode.' -ForegroundColor Green
+function Start-XcodeManagedCodex {
+    param([string[]]$CodexArguments = @())
+    $node = Get-Command node.exe -ErrorAction SilentlyContinue
+    if (-not $node) { throw 'Node.js is unavailable. Reinstall Codex and xcode with npm, then open a new PowerShell window.' }
+    $runner = Join-Path $RepositoryRoot 'bin\managed-codex.js'
+    if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) { throw 'The managed Codex runner is missing. Run xcode update.' }
+    & $node.Source $runner @CodexArguments
+    exit $LASTEXITCODE
 }
 
 function Connect-XcodeOfficeSharedTerminal {
     [void](Get-XcodeOfficeState)
     $node = Get-Command node.exe -ErrorAction SilentlyContinue
     if (-not $node) { throw 'Node.js is unavailable. Reinstall xcode with npm, then open a new PowerShell window.' }
-    $client = Join-Path $RepositoryRoot 'bin\console-relay-client.js'
-    if (-not (Test-Path -LiteralPath $client -PathType Leaf)) { throw 'The console relay client is missing. Run xcode update.' }
+    $client = Join-Path $RepositoryRoot 'bin\session-client.js'
+    if (-not (Test-Path -LiteralPath $client -PathType Leaf)) { throw 'The collaborative session client is missing. Run xcode update.' }
     $sshConfig = Join-Path $env:LOCALAPPDATA 'XcodeRemote\ssh_config'
     if (-not (Test-Path -LiteralPath $sshConfig -PathType Leaf)) { throw 'This office laptop is not paired. Run xcode pair first.' }
     & $node.Source $client --ssh-config $sshConfig
@@ -110,14 +83,12 @@ function Invoke-XcodeOfficeDoctor {
     Write-Host '[1/3] Tailscale status'
     & $tailscale status
     if ($LASTEXITCODE -ne 0) { throw 'Tailscale status failed.' }
-    Write-Host "`n[2/3] Key-only, pinned-host SSH"
-    & $ssh -F $sshConfig -o BatchMode=yes xcode-main 'echo XCODE_SSH_OK'
+    Write-Host "`n[2/3] Pinned xcode gateway"
+    & $ssh -F $sshConfig -o BatchMode=yes xcode-main xcode-gateway probe
     if ($LASTEXITCODE -ne 0) { throw 'Pinned SSH verification failed.' }
-    Write-Host "`n[3/3] Main-PC terminal-workspace availability"
-    $remoteProbe = "`$path = Join-Path `$env:LOCALAPPDATA 'XcodeRemote\console-workspace.json'; if (-not (Test-Path -LiteralPath `$path)) { exit 3 }; `$workspace = Get-Content -Raw -LiteralPath `$path | ConvertFrom-Json; if (@(`$workspace.sessions).Count -lt 1) { exit 4 }"
-    $encodedProbe = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($remoteProbe))
-    & $ssh -F $sshConfig -o BatchMode=yes xcode-main powershell.exe -NoProfile -NonInteractive -EncodedCommand $encodedProbe
-    if ($LASTEXITCODE -ne 0) { throw 'Shared-terminal availability verification failed.' }
+    Write-Host "`n[3/3] Managed Codex sessions"
+    & $ssh -F $sshConfig -o BatchMode=yes xcode-main xcode-gateway list
+    if ($LASTEXITCODE -ne 0) { throw 'Managed-session availability verification failed.' }
 }
 
 function Update-XcodePackage {
@@ -146,6 +117,18 @@ if ($verb -eq 'update') {
     exit 0
 }
 
+if ($verb -eq 'main') {
+    if ($Command.Count -ne 1) { throw 'Usage: xcode main' }
+    & (Join-Path $PSScriptRoot 'install-main.ps1')
+    exit $LASTEXITCODE
+}
+
+if ($verb -eq 'office') {
+    if ($Command.Count -ne 1) { throw 'Usage: xcode office' }
+    & (Join-Path $PSScriptRoot 'install-office.ps1')
+    exit $LASTEXITCODE
+}
+
 if ($verb -eq 'setup') {
     if ($Command.Count -ne 2 -or $Command[1].ToLowerInvariant() -notin @('main', 'office')) {
         throw 'Usage: .\xcode setup main  or  .\xcode setup office'
@@ -164,9 +147,15 @@ switch ($installedRole) {
     'main' {
         switch ($verb) {
             '' {
-                Start-XcodeWorkspaceShare
+                Write-Host 'This is the main PC. Start or resume your normal Codex conversation with: codex' -ForegroundColor Cyan
             }
-            'share' { Start-XcodeWorkspaceShare }
+            'share' { Write-Host 'Managed Codex sessions are shared automatically. Start one with: codex' -ForegroundColor Cyan }
+            'session' {
+                if ($Command.Count -lt 2 -or $Command[1].ToLowerInvariant() -ne 'run') { throw 'Usage: xcode session run -- [codex arguments]' }
+                $arguments = @($Command | Select-Object -Skip 2)
+                if ($arguments.Count -and $arguments[0] -eq '--') { $arguments = @($arguments | Select-Object -Skip 1) }
+                Start-XcodeManagedCodex -CodexArguments $arguments
+            }
             'pair' {
                 if ($Command.Count -ne 1) { throw 'The main PC pairing command takes no host argument: xcode pair' }
                 & (Join-Path $PSScriptRoot 'pair-office.ps1')
@@ -195,12 +184,6 @@ switch ($installedRole) {
                 else { Write-Host 'Office role: prepared; pairing: not yet completed.' -ForegroundColor Yellow }
             }
             'doctor' { Invoke-XcodeOfficeDoctor }
-            'ssh' {
-                [void](Get-XcodeOfficeState)
-                $ssh = Get-XcodeOpenSshExecutable -Name 'ssh.exe'
-                if (-not $ssh) { throw 'Windows OpenSSH Client is unavailable. Run xcode setup office.' }
-                & $ssh -F (Join-Path $env:LOCALAPPDATA 'XcodeRemote\ssh_config') xcode-main
-            }
             'unpair' { throw 'Run xcode unpair on the main PC to revoke this office laptop.' }
             default { throw "Unknown office-laptop xcode command: $verb. Run xcode help." }
         }

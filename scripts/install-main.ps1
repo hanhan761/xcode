@@ -8,6 +8,27 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'XcodeRemote.Common.ps1')
 
+function Install-XcodeCodexEntrypoint {
+    $profilePath = $PROFILE.CurrentUserAllHosts
+    $existing = if (Test-Path -LiteralPath $profilePath -PathType Leaf) { Get-Content -Raw -LiteralPath $profilePath } else { '' }
+    $block = @'
+# >>> xcode managed codex >>>
+function global:codex {
+    [CmdletBinding()]
+    param([Parameter(ValueFromRemainingArguments = $true)][object[]]$XcodeCodexArguments)
+    $xcodeLauncher = Get-Command xcode.cmd -CommandType Application -ErrorAction SilentlyContinue
+    if (-not $xcodeLauncher) { $xcodeLauncher = Get-Command xcode -CommandType Application -ErrorAction SilentlyContinue }
+    if (-not $xcodeLauncher) { throw 'xcode is unavailable. Reinstall it with npm, then open a new PowerShell window.' }
+    & $xcodeLauncher.Source session run -- @($XcodeCodexArguments | ForEach-Object { [string]$_ })
+}
+# <<< xcode managed codex <<<
+'@
+    $pattern = '(?s)# >>> xcode managed codex >>>.*?# <<< xcode managed codex <<<\s*'
+    $updated = if ($existing -match $pattern) { [regex]::Replace($existing, $pattern, $block + "`r`n") } else { $existing.TrimEnd() + "`r`n`r`n" + $block + "`r`n" }
+    Write-XcodeUtf8File -Path $profilePath -Content $updated
+    return $profilePath
+}
+
 if (-not [Environment]::Is64BitOperatingSystem) { throw 'xcode remote requires 64-bit Windows.' }
 $currentSid = Get-XcodeCurrentSid
 $currentUser = $env:USERNAME
@@ -24,6 +45,10 @@ if ($DryRun) {
 
 $tailscale = Get-XcodeTailscaleExecutable
 if (-not $tailscale) { throw 'Tailscale was installed but its trusted executable was not found.' }
+$node = Get-Command node.exe -ErrorAction SilentlyContinue
+if (-not $node) { throw 'Node.js is required to run the xcode session gateway. Install Node.js, then rerun xcode main.' }
+$gatewayScript = Join-Path (Split-Path -Parent $PSScriptRoot) 'bin\session-gateway.js'
+if (-not (Test-Path -LiteralPath $gatewayScript -PathType Leaf)) { throw 'The xcode session gateway is missing. Run xcode update, then rerun xcode main.' }
 
 Write-XcodeStep 'Signing in to Tailscale (the browser opens only when needed)'
 $status = Get-XcodeTailscaleStatus
@@ -55,7 +80,9 @@ Invoke-XcodeElevatedPowerShell `
         '-ExpectedSid', $currentSid,
         '-ExpectedUser', $currentUser,
         '-TailscaleIPv4', $mainIp,
-        '-MainName', $MainName
+        '-MainName', $MainName,
+        '-NodePath', $node.Source,
+        '-GatewayScript', $gatewayScript
     )
 
 $userRoot = Join-Path $env:LOCALAPPDATA 'XcodeRemote'
@@ -75,12 +102,14 @@ $userState = [ordered]@{
     configuredAt = (Get-Date).ToUniversalTime().ToString('o')
 }
 Write-XcodeUtf8File -Path (Join-Path $userRoot 'host-user.json') -Content ($userState | ConvertTo-Json -Depth 5)
+$profilePath = Install-XcodeCodexEntrypoint
 
 Write-Host ''
 Write-Host 'Main PC is ready.' -ForegroundColor Green
 Write-Host "Tailscale host : $MainName ($mainIp)"
 Write-Host "Windows user   : $currentUser"
-Write-Host 'Daily use      : run xcode in the exact terminal you want to share'
+Write-Host 'Daily use      : run codex normally; each new or resumed Codex conversation is shared with your paired office laptop'
+Write-Host "Codex command  : integrated into $profilePath (open a new PowerShell window after setup)"
 
 if ($SkipPairing) {
     Write-Host 'SSH is still staged and closed. Run xcode pair when the office laptop is ready.' -ForegroundColor Yellow

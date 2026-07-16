@@ -1,4 +1,5 @@
 # Local credentials and generated state
+node_modules/
 *.key
 *.pub
 known_hosts

@@ -1,17 +1,22 @@
 {
   "name": "xcode-remote",
-  "version": "1.2.0",
-  "description": "Attach a paired Windows laptop to the main PC's existing PowerShell and Codex terminal workspace",
+  "version": "1.3.0",
+  "description": "Collaborate with managed Codex sessions from a paired Windows laptop",
   "bin": {
     "xcode": "bin/xcode.js"
   },
   "files": [
     "bin",
     "scripts",
-    "README.md"
+    "README.md",
+    "docs/codex-session-handoff.md",
+    "lib"
   ],
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "node-pty": "1.1.0"
   },
   "license": "MIT",
   "repository": {

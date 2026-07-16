@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-call "%~dp0xcode.cmd" setup office
+call "%~dp0xcode.cmd" office
 if errorlevel 1 goto done
 call "%~dp0xcode.cmd" pair
 :done

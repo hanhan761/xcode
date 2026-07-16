@@ -582,7 +582,8 @@ function Add-XcodeAuthorizedKey {
         }
     }
 
-    $options = 'from="' + (($safeSources | Select-Object -Unique) -join ',') + '",no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-user-rc'
+    $gatewayCommand = 'command="C:/ProgramData/XcodeRemote/xcode-gateway.cmd"'
+    $options = $gatewayCommand + ',from="' + (($safeSources | Select-Object -Unique) -join ',') + '",no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-user-rc'
     $newLine = "$options $canonical xcode:$safeLabel"
     $changed = $true
     if ($matchIndex -ge 0) {
@@ -602,6 +603,28 @@ function Add-XcodeAuthorizedKey {
         HadFile = $hadFile
         OriginalContent = $originalContent
     }
+}
+
+function Update-XcodeManagedAuthorizedKeyGateway {
+    $path = Get-XcodeAuthorizedKeysPath
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
+    $original = Get-Content -Raw -LiteralPath $path
+    $lines = @($original -split '\r?\n' | Where-Object { $_.Trim() })
+    $changed = $false
+    $updated = foreach ($line in $lines) {
+        if ($line -notmatch '(?<!\S)xcode:' -or -not (Get-XcodeCanonicalKeyFromAuthorizedLine -Line $line)) {
+            $line
+            continue
+        }
+        $withoutExistingCommand = [regex]::Replace($line, '^(?:command="[^"]*",)?', '')
+        $newLine = 'command="C:/ProgramData/XcodeRemote/xcode-gateway.cmd",' + $withoutExistingCommand
+        if ($newLine -ne $line) { $changed = $true }
+        $newLine
+    }
+    if ($changed) {
+        Write-XcodeAuthorizedKeysContent -Path $path -Content (($updated -join "`r`n") + "`r`n")
+    }
+    return $changed
 }
 
 function Undo-XcodeAuthorizedKeyChange {

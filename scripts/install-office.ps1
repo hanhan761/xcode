@@ -18,8 +18,8 @@ function Test-XcodeSshConnection {
         [Parameter(Mandatory = $true)][string]$ConfigPath
     )
     if (-not (Test-Path -LiteralPath $ConfigPath)) { return $false }
-    $output = (& $SshExe -F $ConfigPath -o BatchMode=yes xcode-main 'echo XCODE_SSH_OK' 2>$null | Out-String)
-    return $LASTEXITCODE -eq 0 -and $output -match 'XCODE_SSH_OK'
+    $output = (& $SshExe -F $ConfigPath -o BatchMode=yes xcode-main xcode-gateway probe 2>$null | Out-String)
+    return $LASTEXITCODE -eq 0 -and $output -match 'XCODE_GATEWAY_OK'
 }
 
 function Test-XcodeFixedTimeString {
@@ -469,5 +469,5 @@ Write-Host ''
 Write-Host 'Office laptop setup is complete.' -ForegroundColor Green
 Write-Host 'Open a NEW PowerShell window and run:'
 Write-Host '  xcode' -ForegroundColor Cyan
-Write-Host 'Use Ctrl+C to detach without changing the main-PC terminal.'
-Write-Host 'Diagnostics: xcode doctor    Emergency shell: xcode ssh'
+Write-Host 'Use Ctrl+C to detach without changing the main-PC Codex conversation.'
+Write-Host 'Diagnostics: xcode doctor'
