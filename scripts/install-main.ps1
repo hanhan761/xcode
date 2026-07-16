@@ -57,30 +57,6 @@ return config
     Write-XcodeUtf8File -Path $Path -Content $content
 }
 
-function Write-XcodeMainLauncher {
-    param(
-        [Parameter(Mandatory = $true)][string]$WezTermPath,
-        [Parameter(Mandatory = $true)][string]$InstallRoot,
-        [Parameter(Mandatory = $true)][string]$PairingScriptPath
-    )
-    $binRoot = Join-Path $InstallRoot 'bin'
-    if (-not (Test-Path -LiteralPath $binRoot)) { New-Item -ItemType Directory -Path $binRoot -Force | Out-Null }
-    $launcher = Join-Path $binRoot 'xcode.cmd'
-    $content = @"
-@echo off
-if /I "%~1"=="pair" (
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PairingScriptPath"
-  exit /b %ERRORLEVEL%
-)
-"$WezTermPath" connect xcode-shared-mux
-exit /b %ERRORLEVEL%
-"@
-    Write-XcodeUtf8File -Path $launcher -Content $content
-    $legacyLauncher = Join-Path $binRoot 'xcode-main.cmd'
-    Write-XcodeUtf8File -Path $legacyLauncher -Content "@echo off`r`ncall `"$launcher`" %*`r`nexit /b %ERRORLEVEL%`r`n"
-    Add-XcodePathEntry -Directory $binRoot -Scope User | Out-Null
-}
-
 if (-not [Environment]::Is64BitOperatingSystem) { throw 'xcode remote requires 64-bit Windows.' }
 $currentSid = Get-XcodeCurrentSid
 $currentUser = $env:USERNAME
@@ -147,11 +123,7 @@ Set-XcodeMainWezTermConfig -PowerShellPath $pwsh -Path $weztermConfig
 
 $userRoot = Join-Path $env:LOCALAPPDATA 'XcodeRemote'
 if (-not (Test-Path -LiteralPath $userRoot)) { New-Item -ItemType Directory -Path $userRoot -Force | Out-Null }
-Write-XcodeMainLauncher `
-    -WezTermPath $wezterm `
-    -InstallRoot $userRoot `
-    -PairingScriptPath (Join-Path $PSScriptRoot 'pair-office.ps1')
-
+Remove-XcodePathEntry -Directory (Join-Path $userRoot 'bin')
 Start-Process -FilePath $wezterm -ArgumentList @('connect', 'xcode-shared-mux') | Out-Null
 $muxReady = $false
 $muxDeadline = (Get-Date).AddSeconds(20)
@@ -163,7 +135,7 @@ do {
     if ($muxResult.ExitCode -eq 0 -and $muxResult.Output.Trim().StartsWith('[')) { $muxReady = $true }
 } while (-not $muxReady -and (Get-Date) -lt $muxDeadline)
 if (-not $muxReady) {
-    throw 'The local WezTerm mux did not start. Open WezTerm once, then rerun install-main.cmd.'
+    throw 'The local WezTerm mux did not start. Open WezTerm once, then rerun xcode setup main.'
 }
 
 $userState = [ordered]@{
@@ -191,7 +163,7 @@ Write-Host 'Shared panes   : only panes opened in this new WezTerm workspace'
 Write-Host 'Safe detach    : Ctrl+Shift+Alt+D'
 
 if ($SkipPairing) {
-    Write-Host 'SSH is still staged and closed. Run pair-office.cmd when the office laptop is ready.' -ForegroundColor Yellow
+    Write-Host 'SSH is still staged and closed. Run xcode pair when the office laptop is ready.' -ForegroundColor Yellow
     exit 0
 }
 

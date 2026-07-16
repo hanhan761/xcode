@@ -50,7 +50,7 @@ if (Test-Path -LiteralPath $transactionPath -PathType Leaf) {
     & $watchdogScript -TransactionPath $transactionPath -RecoverNow
 }
 if (-not (Test-Path -LiteralPath $machineStatePath) -or -not (Test-Path -LiteralPath $userStatePath)) {
-    throw 'The main PC is not staged. Run install-main.cmd first.'
+    throw 'The main PC is not staged. Run xcode setup main first.'
 }
 $machineStateOriginalContent = Get-Content -Raw -LiteralPath $machineStatePath
 $machineState = $machineStateOriginalContent | ConvertFrom-Json
@@ -62,7 +62,7 @@ if ([string]$machineState.windowsSid -ne $ExpectedSid -or [string]$userState.win
 $status = Wait-XcodeTailscaleOnline -TimeoutSeconds 30
 $mainIp = Get-XcodeTailscaleIPv4
 if ($mainIp -ne [string]$machineState.tailscaleIPv4) {
-    throw 'The main PC Tailscale address changed after SSH was staged. Rerun install-main.cmd before pairing.'
+    throw 'The main PC Tailscale address changed after SSH was staged. Rerun xcode setup main before pairing.'
 }
 $adapter = Get-XcodeTailscaleAdapter
 $selfUserId = [string]$status.Self.UserID
@@ -75,7 +75,7 @@ $remoteWezTermPath = [string]$machineState.remoteWezTermPath
 Assert-XcodeNoControlCharacters -Value $remoteWezTermPath -FieldName 'Remote WezTerm proxy path'
 if ($remoteWezTermPath -notmatch '^[A-Za-z]:/[A-Za-z0-9._/-]+\.cmd$' -or
     -not (Test-Path -LiteralPath ($remoteWezTermPath -replace '/', '\'))) {
-    throw 'The trusted remote WezTerm proxy is missing or invalid. Rerun install-main.cmd.'
+    throw 'The trusted remote WezTerm proxy is missing or invalid. Rerun xcode setup main.'
 }
 
 $hostKeyPath = Join-Path $env:ProgramData 'ssh\ssh_host_ed25519_key.pub'
@@ -85,7 +85,7 @@ $hostKeyFingerprint = Get-XcodeSshPublicKeyFingerprint -PublicKey $hostKey
 
 $sshRuleName = 'XcodeRemote-SSH-Tailscale'
 if (-not (Get-NetFirewallRule -Name $sshRuleName -ErrorAction SilentlyContinue)) {
-    throw 'The staged Tailscale-only SSH firewall rule is missing. Rerun install-main.cmd.'
+    throw 'The staged Tailscale-only SSH firewall rule is missing. Rerun xcode setup main.'
 }
 
 $pairRuleName = 'XcodeRemote-OneTimePairing'
@@ -119,7 +119,7 @@ Write-Host "Pairing code    : $displayCode" -ForegroundColor Green
 Write-Host "Expires         : $($deadline.ToString('HH:mm:ss'))"
 Write-Host "SSH host key    : $hostKeyFingerprint" -ForegroundColor Cyan
 Write-Host ''
-Write-Host 'On the office laptop, run install-office.cmd and compare this SSH fingerprint exactly.'
+Write-Host 'On the prepared office laptop, run xcode pair and compare this SSH fingerprint exactly.'
 
 try {
     $listener.Start(5)

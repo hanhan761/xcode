@@ -146,15 +146,37 @@ Assert ($first -match 'Subsystem sftp sftp-server.exe') 'An unmanaged SSH direct
 Assert (([regex]::Matches($first, 'BEGIN XCODE REMOTE MANAGED BLOCK')).Count -eq 1) 'SSH managed block was duplicated.'
 
 Write-Host '5. Validate entry points, mux policy, and credential hygiene'
-$entries = @('install-main.cmd', 'install-office.cmd', 'pair-office.cmd', 'unpair-office.cmd')
+$entries = @('xcode.cmd', 'install-main.cmd', 'install-office.cmd', 'pair-office.cmd', 'unpair-office.cmd')
 foreach ($entry in $entries) { Assert (Test-Path (Join-Path $root $entry)) "Missing $entry." }
 $officeScript = Get-Content -Raw (Join-Path $scripts 'install-office.ps1')
 $mainScript = Get-Content -Raw (Join-Path $scripts 'install-main.ps1')
+$dispatcher = Join-Path $scripts 'xcode.ps1'
+$packagePath = Join-Path $root 'package.json'
+$nodeLauncher = Join-Path $root 'bin\xcode.js'
+Assert (Test-Path -LiteralPath $dispatcher) 'The unified xcode dispatcher is missing.'
+Assert (Test-Path -LiteralPath $packagePath) 'The npm package manifest is missing.'
+Assert (Test-Path -LiteralPath $nodeLauncher) 'The npm xcode binary is missing.'
+$package = Get-Content -Raw -LiteralPath $packagePath | ConvertFrom-Json
+Assert ($package.name -eq 'xcode-remote') 'The npm package name is incorrect.'
+Assert ($package.bin.xcode -eq 'bin/xcode.js') 'npm does not expose the xcode command.'
+$helpText = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $dispatcher help | Out-String)
+Assert ($LASTEXITCODE -eq 0 -and $helpText -match 'xcode setup main') 'The xcode dispatcher does not expose the setup workflow.'
+Assert ($helpText -match 'xcode pair') 'The xcode dispatcher does not expose the paired workflow.'
+Assert ($helpText -match 'xcode update') 'The xcode dispatcher does not expose self-update.'
+$nodeHelpText = (& node.exe $nodeLauncher help | Out-String)
+Assert ($LASTEXITCODE -eq 0 -and $nodeHelpText -match 'xcode setup office') 'The npm xcode binary cannot launch the dispatcher.'
+Assert ((Get-Content -Raw (Join-Path $root 'xcode.cmd')) -match 'scripts\\xcode\.ps1') 'The repository xcode bootstrap does not use the dispatcher.'
+Assert ((Get-Content -Raw (Join-Path $root 'install-main.cmd')) -match 'xcode\.cmd" setup main') 'The legacy main adapter does not route through xcode setup.'
+Assert ((Get-Content -Raw (Join-Path $root 'install-office.cmd')) -match 'xcode\.cmd" setup office') 'The legacy office adapter does not route through xcode setup.'
+Assert ((Get-Content -Raw (Join-Path $root 'pair-office.cmd')) -match 'xcode\.cmd" pair') 'The legacy pairing adapter does not route through xcode pair.'
+Assert ($officeScript -match '\[switch\]\$SetupOnly') 'The office setup cannot be run independently of pairing.'
+Assert ($officeScript -match '\[switch\]\$PairOnly') 'The office pairing client cannot be run independently of setup.'
 Assert ($officeScript -match "stricthostkeychecking = 'yes'") 'WezTerm strict host-key policy is missing.'
 Assert ($officeScript -match 'no_agent_auth = true') 'WezTerm is not using its dedicated identity deterministically.'
 Assert ($officeScript -notmatch "identitiesonly = 'yes'") 'The WezTerm config still disables agent behavior through the wrong option.'
-Assert ($mainScript -match '\$launcher = Join-Path \$binRoot ''xcode\.cmd''') 'The main PC does not install the xcode command.'
-Assert ($mainScript -match 'if /I "%~1"=="pair"') 'The main xcode command does not expose xcode pair.'
+Assert ($mainScript -match 'Remove-XcodePathEntry') 'The main PC does not clear the legacy local xcode launcher.'
+Assert ((Get-Content -Raw $dispatcher) -match "github:hanhan761/xcode#main") 'xcode update does not use the GitHub release source.'
+Assert ($officeScript -notmatch 'Confirm pair-office\.cmd') 'Office pairing recovery still exposes the legacy CMD command.'
 $forbidden = 'tskey-|BEGIN OPENSSH PRIVATE KEY'
 $hits = Get-ChildItem $root -Recurse -File |
     Where-Object { $_.FullName -notmatch '\\.git\\' -and $_.FullName -ne $PSCommandPath } |

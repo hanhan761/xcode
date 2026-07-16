@@ -1,78 +1,60 @@
-# Task Plan: Xcode Remote PowerShell
+# Task Plan: Unified `xcode` Workflow
 
 ## Goal
 
-Deliver an idempotent two-PC installer so a Windows office laptop can run `xcode` to attach to persistent PowerShell tabs and panes hosted on a Windows main PC.
+Deliver a GitHub-installable npm CLI whose role-aware `xcode` command owns setup, pairing, daily attachment and self-update while preserving the current secure pairing protocol.
 
 ## Current Phase
 
-Phase 5: live installation handoff.
+Phase 4: verification and release.
 
 ## Phases
 
 ### Phase 1: Requirements and discovery
 
-- [x] Confirm both machines are Windows.
-- [x] Confirm office laptop is the primary remote controller; phone is out of MVP scope.
-- [x] Inspect the main PC: Windows 11 24H2 Home, Tailscale installed, no OpenSSH Server, no PowerShell 7, no WezTerm.
-- [x] Define persistence and multi-pane semantics.
+- [x] Capture the desired interaction: both PCs use `xcode` for pairing.
+- [x] Map the current bootstrap, setup, pairing and daily-connect entry points.
+- [x] Record the compatibility and security constraints.
 - **Status:** complete
 
-### Phase 2: Architecture and security baseline
+### Phase 2: Interface and implementation design
 
-- [x] Select Tailscale + Windows OpenSSH + WezTerm SSH multiplexing.
-- [x] Keep SSH and pairing ports off the public/LAN interfaces.
-- [x] Select public-key-only SSH and pinned host keys.
-- [x] Design a one-use Tailscale-identity-aware pairing window.
+- [x] Define the small external command interface and role-specific behavior.
+- [x] Define npm as the official installation and update distribution channel.
+- [x] Add a repository-local `xcode` bootstrap dispatcher.
+- [x] Package the dispatcher as an npm global binary.
+- [x] Separate office dependency setup from office pairing.
 - **Status:** complete
 
-### Phase 3: Implementation
+### Phase 3: Tests and documentation
 
-- [x] Add one-click CMD entry points for the main PC and office laptop.
-- [x] Add package, Tailscale, OpenSSH, firewall and WezTerm configuration scripts.
-- [x] Install the user-level `xcode` launcher.
-- [x] Add diagnostics and documentation.
+- [x] Add regression coverage for every public command route.
+- [x] Update README to document only `xcode` commands.
 - **Status:** complete
 
-### Phase 4: Verification and review
+### Phase 4: Verification and release
 
-- [x] Parse every PowerShell script.
-- [x] Run installer dry-run paths.
-- [x] Test pairing-code generation, Ed25519 parsing/fingerprinting and credential hygiene.
-- [x] Resolve all findings from three independent reviews.
-- [ ] Run the real two-Windows end-to-end pairing and mux reattachment test.
-- **Status:** static review complete; real two-PC test pending
+- [x] Run tests in Windows PowerShell 5.1 and PowerShell 7.
+- [x] Verify npm package contents without publishing.
+- [ ] Review the diff, commit and push `main`.
+- **Status:** in_progress
 
-### Phase 5: Delivery
-
-- [x] Commit the reviewed implementation.
-- [x] Push to `https://github.com/hanhan761/xcode.git`.
-- [ ] Run `install-main.cmd`, then hand off `install-office.cmd` to the office laptop.
-- **Status:** pending
-
-## Success Criteria
-
-1. Main installer configures Tailscale unattended mode, OpenSSH key-only access and a shared WezTerm mux without exposing TCP 22 outside Tailscale.
-2. Office installer performs one Tailscale login and one local-approved pairing; the private SSH key never leaves the office laptop.
-3. A new office-laptop PowerShell can run `xcode` and attach to the main PC mux.
-4. Network disconnect and safe GUI detach preserve panes; main-PC reboot is documented as destructive to runtime state.
-5. Changed SSH host keys fail closed and no password fallback exists.
-
-## Decisions
+## Decisions Made
 
 | Decision | Rationale |
 |---|---|
-| Use standard OpenSSH over Tailscale | Tailscale SSH server does not support Windows targets. |
-| Use WezTerm mux before custom code | It already owns panes, tabs, reconnectable process lifetime and Windows ConPTY. |
-| Pair with a short-lived Tailscale-only listener | Avoids sending or scripting the main Windows password. |
-| Pin host keys during pairing | Prevents silent trust-on-first-use replacement. |
-| Keep phone outside MVP | Office-laptop workflow is the user's priority. |
+| Use `xcode setup main` / `xcode setup office` as the first-run interface | A Windows executable must exist before a PATH command can be installed; `./xcode` is still a single, named `xcode` entry point. |
+| Use role-aware `xcode pair` on both PCs | The same command has a simple intent; saved local role determines whether it opens or joins a pairing session. |
+| Keep setup separate from pairing | Dependency/UAC work is one-time; pairing is one-time per device and must be repeatable without reinstalling. |
+| Install from GitHub with npm, update through `xcode update` | The repository is the authorized release source today; no npm-registry publishing credentials are needed. |
 
 ## Errors Encountered
 
 | Error | Attempt | Resolution |
 |---|---:|---|
-| Workspace was not initially a Git repository | 1 | Initialized `main` and added the requested origin. |
-| `apply_patch` intermittently could not update existing files under the Windows sandbox | multiple | Recreated only agent-owned files; never rewrote user files with shell tricks. |
-| First smoke test used `.Count` on an empty pipeline under StrictMode | 1 | Wrapped the pipeline in `@(...)`. |
-| Sandbox user temp directory caused `ssh-keygen` bad-file-descriptor | 1 | Verification uses the approved `C:\tmp` temp root in this environment. |
+| None in this workflow refactor | — | — |
+| ACL/path cleanup patch did not match the current installer context | 1 | Inspect the current anchors, then apply a narrower patch. |
+| `xcode help` bound `help` as the optional repository path | 1 | Make the remaining command arguments position zero before optional named settings. |
+| Dispatcher parameter defaults cannot use `$PSScriptRoot` during binding | 1 | Resolve the default repository after parameter binding from `$PSCommandPath`. |
+| Help text omitted the newly implemented update command | 1 | Add `xcode update` to the public command reference. |
+| Batch replacement of legacy recovery messages did not match current script text | 1 | Inspect and replace each message using its current anchor. |

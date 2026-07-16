@@ -3,11 +3,14 @@ param(
     [ValidatePattern('^[A-Za-z0-9.-]+$')][string]$MainHost = 'xcode-main',
     [ValidatePattern('^[A-Za-z0-9-]+$')][string]$OfficeName = 'xcode-office',
     [ValidateRange(1024, 65535)][int]$PairPort = 43122,
+    [switch]$SetupOnly,
+    [switch]$PairOnly,
     [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'XcodeRemote.Common.ps1')
+if ($SetupOnly -and $PairOnly) { throw 'Office setup and pairing must be run as separate xcode commands.' }
 
 function Test-XcodeSshConnection {
     param(
@@ -207,18 +210,13 @@ function Write-XcodeOfficeFiles {
         [Parameter(Mandatory = $true)][string]$HostKey,
         [Parameter(Mandatory = $true)][string]$KeyPath,
         [Parameter(Mandatory = $true)][string]$WezTermPath,
-        [Parameter(Mandatory = $true)][string]$SshPath,
-        [Parameter(Mandatory = $true)][string]$TailscalePath,
         [Parameter(Mandatory = $true)][string]$InstallRoot
     )
 
     if (-not (Test-Path -LiteralPath $InstallRoot)) { New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null }
-    $binRoot = Join-Path $InstallRoot 'bin'
-    if (-not (Test-Path -LiteralPath $binRoot)) { New-Item -ItemType Directory -Path $binRoot -Force | Out-Null }
     $knownHosts = Join-Path $InstallRoot 'known_hosts'
     $sshConfig = Join-Path $InstallRoot 'ssh_config'
     $weztermConfig = Join-Path $InstallRoot 'office-wezterm.lua'
-    $launcher = Join-Path $binRoot 'xcode.cmd'
 
     Assert-XcodeNoWhitespacePath -Path $KeyPath -Purpose 'The dedicated SSH private key'
     Assert-XcodeNoWhitespacePath -Path $knownHosts -Purpose 'The pinned SSH host-key file'
@@ -295,44 +293,6 @@ return config
 "@
     Write-XcodeUtf8File -Path $weztermConfig -Content $weztermContent
 
-    $launcherContent = @"
-@echo off
-setlocal EnableExtensions
-set "XCODE_ROOT=$InstallRoot"
-set "XCODE_WEZTERM=$WezTermPath"
-set "XCODE_SSH=$SshPath"
-set "XCODE_TAILSCALE=$TailscalePath"
-set "XCODE_REMOTE_WEZTERM=$remoteProxy"
-
-if /I "%~1"=="doctor" goto doctor
-if /I "%~1"=="ssh" goto ssh
-"%XCODE_WEZTERM%" --config-file "%XCODE_ROOT%\office-wezterm.lua" connect XCODE_MAIN
-exit /b %ERRORLEVEL%
-
-:ssh
-"%XCODE_SSH%" -F "%XCODE_ROOT%\ssh_config" xcode-main
-exit /b %ERRORLEVEL%
-
-:doctor
-echo [1/4] Tailscale status
-"%XCODE_TAILSCALE%" status
-if errorlevel 1 exit /b 1
-echo.
-echo [2/4] Key-only, pinned-host SSH
-"%XCODE_SSH%" -F "%XCODE_ROOT%\ssh_config" -o BatchMode=yes xcode-main "echo XCODE_SSH_OK"
-if errorlevel 1 exit /b 1
-echo.
-echo [3/4] Matching remote WezTerm
-"%XCODE_SSH%" -F "%XCODE_ROOT%\ssh_config" -o BatchMode=yes xcode-main "%XCODE_REMOTE_WEZTERM% --version"
-if errorlevel 1 exit /b 1
-echo.
-echo [4/4] Persistent host mux
-"%XCODE_SSH%" -F "%XCODE_ROOT%\ssh_config" -o BatchMode=yes xcode-main "%XCODE_REMOTE_WEZTERM% cli --prefer-mux list --format json"
-exit /b %ERRORLEVEL%
-"@
-    Write-XcodeUtf8File -Path $launcher -Content $launcherContent
-    Add-XcodePathEntry -Directory $binRoot -Scope User | Out-Null
-
     $state = [ordered]@{
         schemaVersion = 2
         role = 'office'
@@ -348,16 +308,37 @@ exit /b %ERRORLEVEL%
         configuredAt = (Get-Date).ToUniversalTime().ToString('o')
     }
     Write-XcodeUtf8File -Path (Join-Path $InstallRoot 'client.json') -Content ($state | ConvertTo-Json -Depth 5)
-    return [pscustomobject]@{ SshConfig = $sshConfig; WezTermConfig = $weztermConfig; Launcher = $launcher }
+    return [pscustomobject]@{ SshConfig = $sshConfig; WezTermConfig = $weztermConfig }
 }
 
-Write-XcodeStep 'Checking WinGet and required office-laptop software'
-$winget = Assert-XcodeWinget
-Ensure-XcodeWingetPackage -WingetPath $winget -PackageId 'Tailscale.Tailscale' -DryRun:$DryRun
-Ensure-XcodeWingetPackage -WingetPath $winget -PackageId 'wez.wezterm' -DryRun:$DryRun
+function Write-XcodeOfficeSetupFiles {
+    param(
+        [Parameter(Mandatory = $true)][string]$InstallRoot,
+        [Parameter(Mandatory = $true)][string]$OfficeName,
+        [Parameter(Mandatory = $true)][string]$KeyPath
+    )
+
+    if (-not (Test-Path -LiteralPath $InstallRoot)) { New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null }
+    Remove-XcodePathEntry -Directory (Join-Path $InstallRoot 'bin')
+    $setupState = [ordered]@{
+        schemaVersion = 1
+        role = 'office'
+        officeName = $OfficeName
+        keyPath = $KeyPath
+        configuredAt = (Get-Date).ToUniversalTime().ToString('o')
+    }
+    Write-XcodeUtf8File -Path (Join-Path $InstallRoot 'office-setup.json') -Content ($setupState | ConvertTo-Json -Depth 4)
+}
+
+if (-not $PairOnly) {
+    Write-XcodeStep 'Checking WinGet and required office-laptop software'
+    $winget = Assert-XcodeWinget
+    Ensure-XcodeWingetPackage -WingetPath $winget -PackageId 'Tailscale.Tailscale' -DryRun:$DryRun
+    Ensure-XcodeWingetPackage -WingetPath $winget -PackageId 'wez.wezterm' -DryRun:$DryRun
+}
 Refresh-XcodeProcessPath
 if ($DryRun) {
-    Write-Host '[dry-run] OpenSSH Client, Tailscale login, dedicated key, authenticated pairing, and real WezTerm attach'
+    Write-Host '[dry-run] Office prerequisites, dedicated key, authenticated pairing, and real WezTerm attach'
     exit 0
 }
 
@@ -365,6 +346,9 @@ $currentSid = Get-XcodeCurrentSid
 $currentUser = $env:USERNAME
 $ssh = Get-XcodeOpenSshExecutable -Name 'ssh.exe'
 $sshKeygen = Get-XcodeOpenSshExecutable -Name 'ssh-keygen.exe'
+if ($PairOnly -and (-not $ssh -or -not $sshKeygen)) {
+    throw 'This office laptop is not prepared. Run xcode setup office before xcode pair.'
+}
 if (-not $ssh -or -not $sshKeygen) {
     Write-XcodeStep 'Requesting one administrator step for Windows OpenSSH Client'
     Invoke-XcodeElevatedPowerShell `
@@ -392,6 +376,7 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to configure Tailscale (exit $LASTEXITC
 $status = Wait-XcodeTailscaleOnline
 
 $installRoot = Join-Path $env:LOCALAPPDATA 'XcodeRemote'
+$officeSetupStatePath = Join-Path $installRoot 'office-setup.json'
 $sshDirectory = Join-Path $env:USERPROFILE '.ssh'
 $keyPath = Join-Path $sshDirectory 'xcode_office_ed25519'
 Assert-XcodeNoWhitespacePath -Path $keyPath -Purpose 'The dedicated SSH private key'
@@ -416,23 +401,37 @@ if ((Get-XcodeCanonicalSshPublicKey -PublicKey $derivedPublicKey) -ne (Get-Xcode
 $localVersion = [string](& $wezterm --version 2>$null | Select-Object -First 1)
 Assert-XcodeSupportedWezTermVersion -Version $localVersion
 
+if ($PairOnly) {
+    if (-not (Test-Path -LiteralPath $officeSetupStatePath -PathType Leaf)) {
+        throw 'This office laptop is not prepared. Run xcode setup office before xcode pair.'
+    }
+    $setupState = Get-Content -Raw -LiteralPath $officeSetupStatePath | ConvertFrom-Json
+    if ([string]$setupState.role -ne 'office') { throw 'The office setup state is invalid. Run xcode setup office again.' }
+}
+if ($SetupOnly) {
+    Write-XcodeOfficeSetupFiles `
+        -InstallRoot $installRoot `
+        -OfficeName $OfficeName `
+        -KeyPath $keyPath
+    Write-Host ''
+    Write-Host 'Office laptop is prepared.' -ForegroundColor Green
+    Write-Host 'Next: on the main PC run xcode pair; then on this laptop run xcode pair.'
+    exit 0
+}
+
 $existingSshConfig = Join-Path $installRoot 'ssh_config'
 $existingWezTermConfig = Join-Path $installRoot 'office-wezterm.lua'
-$existingLauncher = Join-Path $installRoot 'bin\xcode.cmd'
 $existingStatePath = Join-Path $installRoot 'client.json'
-if ((Test-XcodeSshConnection -SshExe $ssh -ConfigPath $existingSshConfig) -and
+if ((-not $PairOnly) -and (Test-XcodeSshConnection -SshExe $ssh -ConfigPath $existingSshConfig) -and
     (Test-Path -LiteralPath $existingWezTermConfig) -and
-    (Test-Path -LiteralPath $existingLauncher) -and
     (Test-Path -LiteralPath $existingStatePath)) {
     try {
         $existingState = Get-Content -Raw -LiteralPath $existingStatePath | ConvertFrom-Json
         if ([int]$existingState.schemaVersion -ne 2) { throw 'The installed office schema is outdated.' }
         $existingLua = Get-Content -Raw -LiteralPath $existingWezTermConfig
-        $existingLauncherContent = Get-Content -Raw -LiteralPath $existingLauncher
         $existingSshContent = Get-Content -Raw -LiteralPath $existingSshConfig
         if ($existingLua -notmatch 'XCODE REMOTE MANAGED CONFIG' -or
             $existingLua -notmatch "stricthostkeychecking = 'yes'" -or
-            $existingLauncherContent -notmatch 'connect XCODE_MAIN' -or
             $existingSshContent -notmatch '(?m)^\s*StrictHostKeyChecking yes\r?$') {
             throw 'An installed office file no longer matches the managed security policy.'
         }
@@ -448,7 +447,7 @@ if ((Test-XcodeSshConnection -SshExe $ssh -ConfigPath $existingSshConfig) -and
         Start-Sleep -Seconds 3
         $existingApproval = Read-Host 'Existing pairing opened XCODE_MAIN. Does it show the main-PC workspace? [y/N]'
         if ($existingApproval -notmatch '^[Yy]$') { throw 'The existing real attach was not confirmed.' }
-        Add-XcodePathEntry -Directory (Join-Path $installRoot 'bin') -Scope User | Out-Null
+        Remove-XcodePathEntry -Directory (Join-Path $installRoot 'bin')
         Write-Host 'This office laptop is already paired; SSH, mux, and the real attach all work.' -ForegroundColor Green
         exit 0
     }
@@ -469,7 +468,7 @@ do {
     catch { $pairAddress = $null }
     if (-not $pairAddress) { Start-Sleep -Seconds 2 }
 } while (-not $pairAddress -and (Get-Date) -lt $resolveDeadline)
-if (-not $pairAddress) { throw "Cannot resolve $MainHost to a Tailscale IPv4 address. Confirm pair-office.cmd is open on the main PC." }
+if (-not $pairAddress) { throw "Cannot resolve $MainHost to a Tailscale IPv4 address. Confirm xcode pair is open on the main PC." }
 
 $pairAddressText = $pairAddress.ToString()
 $mainWhois = Get-XcodeTailscaleWhois -Address $pairAddressText
@@ -498,7 +497,6 @@ $trackedPaths = @(
     (Join-Path $installRoot 'known_hosts'),
     (Join-Path $installRoot 'ssh_config'),
     (Join-Path $installRoot 'office-wezterm.lua'),
-    (Join-Path $installRoot 'bin\xcode.cmd'),
     (Join-Path $installRoot 'client.json')
 )
 $snapshots = @{}
@@ -531,8 +529,6 @@ try {
         -HostKey $validation.HostKey `
         -KeyPath $keyPath `
         -WezTermPath $wezterm `
-        -SshPath $ssh `
-        -TailscalePath $tailscale `
         -InstallRoot $installRoot
 
     Write-XcodeStep 'Verifying pinned SSH, matching WezTerm, and the host mux'
@@ -575,7 +571,7 @@ catch {
         try { [Environment]::SetEnvironmentVariable('Path', $previousUserPath, 'User') } catch {}
     }
     else {
-        Write-Warning 'The commit acknowledgement was interrupted. Keeping the already-validated local files avoids a split-brain rollback; rerun install-office.cmd or xcode doctor to resolve the final state.'
+        Write-Warning 'The commit acknowledgement was interrupted. Keeping the already-validated local files avoids a split-brain rollback; rerun xcode pair or xcode doctor to resolve the final state.'
     }
     throw
 }

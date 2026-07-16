@@ -1,6 +1,9 @@
 @echo off
 setlocal EnableExtensions
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\install-office.ps1"
+call "%~dp0xcode.cmd" setup office
+if errorlevel 1 goto done
+call "%~dp0xcode.cmd" pair
+:done
 set "XCODE_EXIT=%ERRORLEVEL%"
 echo.
 if not "%XCODE_EXIT%"=="0" echo Office-laptop setup stopped with exit code %XCODE_EXIT%.

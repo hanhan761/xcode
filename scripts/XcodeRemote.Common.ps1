@@ -194,6 +194,19 @@ function Add-XcodePathEntry {
     return [pscustomobject]@{ Changed = $true; Previous = $current }
 }
 
+function Remove-XcodePathEntry {
+    param([Parameter(Mandatory = $true)][string]$Directory)
+
+    $normalized = $Directory.TrimEnd('\').ToLowerInvariant()
+    $current = [Environment]::GetEnvironmentVariable('Path', 'User')
+    if (-not $current) { return }
+    $entries = @($current -split ';' | Where-Object {
+        $_ -and $_.TrimEnd('\').ToLowerInvariant() -ne $normalized
+    })
+    [Environment]::SetEnvironmentVariable('Path', ($entries -join ';'), 'User')
+    Refresh-XcodeProcessPath
+}
+
 function Write-XcodeUtf8File {
     param(
         [Parameter(Mandatory = $true)][string]$Path,

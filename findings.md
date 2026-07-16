@@ -1,63 +1,39 @@
 # Findings and Decisions
 
-## Environment
+## Requirements
 
-- Main PC: `LAPTOP-123L226P`, Windows 11 24H2 Home (build 26100).
-- Main shell before installation: Windows PowerShell 5.1.
-- Tailscale is online in tailnet `hanhan761.github`.
-- Main Tailscale address before optional rename: `100.77.199.126`.
-- Node 24, npm 11, .NET 10 and Git are available for future custom development.
-- OpenSSH Server, PowerShell 7 and WezTerm are not currently installed on the main PC.
+- The office laptop must not be presented as an `install-office.cmd` workflow.
+- Main and office pairing must both be invoked through `xcode`.
+- Daily office use remains one command: `xcode`.
+- Installation and update must use npm; the latest GitHub `main` revision is the release source.
+- The current one-time code, Tailscale identity verification and SSH host-key fingerprint confirmation remain intact.
 
-## Architecture
+## Research Findings
 
-```text
-Main WezTerm GUI ---------+
-                          +-- host standalone mux -- PowerShell panes
-Office WezTerm -- SSH ----+
-                 over Tailscale
-```
+- The current main launcher already exposes `xcode pair` and otherwise attaches the local WezTerm mux.
+- The current office flow combines dependency setup, pairing and first attach in `install-office.ps1`; its `xcode` command is installed only after that flow completes.
+- A fresh Windows machine has no PATH-resolved `xcode`. A repository-local `./xcode` bootstrap is therefore the smallest honest first-run interface.
+- The current office installer resolves `xcode-main` through Tailscale MagicDNS, accepts the one-time code, verifies the fingerprint and writes its daily launcher only after commit.
+- Current office state supports one paired main PC. This refactor must not imply multi-host selection until its state/configuration model is expanded.
+- Existing office `xcode` already supports `doctor` and emergency `ssh`; main `xcode` currently supports only attach and `pair`.
+- Existing main and office launchers are generated differently. A shared dispatcher is the clean seam for role-aware commands and avoids duplicating command parsing in two batch files.
+- The npm dry-run pack includes the dispatcher, every PowerShell implementation file, the README and architecture graphic; it excludes legacy root CMD adapters.
 
-- Host `.wezterm.lua` places a standalone Unix mux domain first and makes the local GUI attach to it.
-- Office WezTerm uses an SSH domain. Remote `wezterm cli --prefer-mux proxy` selects the host's first Unix domain.
-- The same Windows account must own the host mux and the SSH login.
-- Ordinary SSH is retained only as an emergency path; it does not preserve tabs or panes.
+## Technical Decisions
 
-## Pairing
+| Decision | Rationale |
+|---|---|
+| Add a single repository-local `xcode.cmd` dispatcher | First-run users type `./xcode`; installed users type `xcode`. Both use the same command grammar. |
+| Persist role after setup | Lets `xcode pair` choose host or office behavior without users learning separate scripts. |
+| Make `xcode pair` on office perform only the pairing client flow | It can be rerun to pair another main PC without package installation or UAC. |
+| Retain legacy CMD files as compatibility adapters, not documented interfaces | Existing clones and shortcuts keep working while the public interface becomes consistent. |
+| Keep this change single-host | The requested command unification is independent of a multi-host state redesign; `xcode connect <name>` can be added later without weakening today's pairing flow. |
+| Package as `xcode-remote` with the `xcode` npm binary | Avoids claiming the unscoped `xcode` npm package name and allows `npm install -g github:hanhan761/xcode`. |
+| Use `xcode update` to reinstall the GitHub package globally | This explicitly pulls the current repository revision without requiring npm-registry publication authority. |
+| Rewrite all actionable installer error text to `xcode` syntax | Users should never need to discover an internal legacy adapter while recovering from a failure. |
 
-- Main PC opens TCP 43122 for ten minutes on the Tailscale adapter only.
-- Office laptop generates a dedicated unencrypted Ed25519 key locally and submits only its public key plus the eight-digit code.
-- Main PC uses `tailscale whois --json` to ensure the requester is owned by the same Tailscale user.
-- Main PC displays the verified device identity and SSH fingerprint for local approval.
-- Main PC restricts the key to the verified office Tailscale node addresses, stages it under a durable rollback journal, and returns its Ed25519 SSH host key with an HMAC proof.
-- Office laptop pins that host key in an xcode-owned `known_hosts` file, verifies SSH and the host mux, performs one real WezTerm attach, and commits only after user confirmation.
+## Issues Encountered
 
-## Security Constraints
-
-- Never expose OpenSSH, WinRM or the pairing listener directly to the internet.
-- Never store a reusable Tailscale auth key, SSH private key, Windows password or pairing code in Git.
-- Disable Windows OpenSSH password authentication before accepting remote access.
-- Restrict persistent TCP 22 firewall access to the active Tailscale adapter and Tailscale address ranges.
-- Keep host-key changes fail-closed.
-- Keep sshd stopped and its firewall rule disabled until a key is staged; a watchdog rolls back interrupted pre-commit pairings.
-- Lost laptop response requires both Tailscale device revocation and removal of its SSH public key.
-
-## Current Caveats
-
-- WezTerm 20240203 or newer is required; both PCs must run the exact same build.
-- Remote mux bootstrap uses an ACL-protected, no-space ProgramData wrapper rather than relying on a newly changed service PATH.
-- The exact concurrent Windows-to-Windows shared-mux recipe is based on official docs/source but still needs a live two-PC test.
-- WezTerm has no single-writer lease; two GUIs can type into the same pane.
-- Host reboot or mux-server death loses shell memory and running panes.
-- Tailscale authentication can expire independently of the long-lived SSH key.
-- A sleeping host is unreachable without a separate Wake-on-LAN helper.
-
-## Primary References
-
-- https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse
-- https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement
-- https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh-server-configuration
-- https://tailscale.com/docs/how-to/run-unattended
-- https://tailscale.com/docs/reference/tailscale-cli
-- https://wezterm.org/multiplexing.html
-- https://wezterm.org/config/lua/SshDomain.html
+| Issue | Resolution |
+|---|---|
+| Historic planning files described installation as not yet run | Replaced them with the active workflow-refactor plan. |
