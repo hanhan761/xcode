@@ -204,6 +204,7 @@ Assert ($officeScript -notmatch 'office-wezterm\.lua') 'Office setup still creat
 Assert ($mainScript -notmatch 'wez\.wezterm') 'Main setup still installs WezTerm for the legacy mux.'
 Assert ($officeScript -notmatch 'wez\.wezterm') 'Office setup still installs WezTerm for the legacy mux.'
 Assert ($mainScript -match 'Remove-XcodePathEntry') 'The main PC does not clear the legacy local xcode launcher.'
+Assert ([regex]::Match((Get-Content -Raw $dispatcher), 'function Update-XcodePackage \{[\s\S]*?\n\}').Value -match 'Remove-XcodePathEntry') 'xcode update does not remove the legacy local launcher from PATH.'
 Assert ((Get-Content -Raw $dispatcher) -match "github:hanhan761/xcode#main") 'xcode update does not use the GitHub release source.'
 Assert ($officeScript -notmatch 'Confirm pair-office\.cmd') 'Office pairing recovery still exposes the legacy CMD command.'
 $forbidden = 'tskey-|BEGIN OPENSSH PRIVATE KEY'

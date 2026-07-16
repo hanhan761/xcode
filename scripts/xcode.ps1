@@ -128,7 +128,10 @@ function Update-XcodePackage {
     Write-XcodeStep 'Updating xcode from GitHub'
     & $npm.Source install --global 'github:hanhan761/xcode#main'
     if ($LASTEXITCODE -ne 0) { throw "npm could not update xcode (exit $LASTEXITCODE)." }
-    Write-Host 'xcode is updated. Open a new PowerShell window before your next xcode command.' -ForegroundColor Green
+    # Versions before the npm package placed a WezTerm-only xcode.cmd in this
+    # directory. It can shadow the npm command in older user PATHs.
+    Remove-XcodePathEntry -Directory (Join-Path $env:LOCALAPPDATA 'XcodeRemote\bin')
+    Write-Host 'xcode is updated. The legacy local launcher was removed from your PATH; open a new PowerShell window before your next xcode command.' -ForegroundColor Green
 }
 
 $verb = if ($Command.Count -eq 0) { '' } else { $Command[0].ToLowerInvariant() }

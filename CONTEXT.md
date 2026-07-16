@@ -1,6 +1,6 @@
 # Remote Existing-Console Context
 
-This project attaches an authorized Windows office laptop to one PowerShell or Codex CLI console that is already running on a Windows main PC.
+This project attaches an authorized Windows office laptop to the existing PowerShell and Codex CLI terminal workspace on a Windows main PC.
 
 ## Language
 
@@ -12,15 +12,18 @@ _Avoid_: server, remote computer, slave
 An authorized office laptop that renders and controls the host-owned console.
 _Avoid_: client when referring to the device itself
 
-**Shared console**:
-One existing Windows Console selected by running `xcode share` inside it. The relay reads its screen and writes input to the same console; it does not create a shell or adopt a different process.
-_Avoid_: workspace, mux, new session
+**Terminal workspace**:
+The discoverable existing Windows Consoles under the controlled host's current Windows user and session. One background broker maintains a catalog; it does not create a shell or Codex conversation.
+_Avoid_: mux, new session, remote desktop
 
 **Relay sidecar**:
-A child PowerShell process attached to the shared console. It listens only on the host loopback interface and owns the short-lived token.
+A PowerShell process attached to exactly one original Console. It listens only on the host loopback interface and owns the short-lived token.
+
+**Workspace broker**:
+The background controlled-host process started by `xcode`. It discovers shell roots, runs one relay per Console, and writes the catalog used by the office selector.
 
 **Attachment**:
-One temporary terminal-only office connection. Losing it does not end the shared console or its current Codex/PowerShell process.
+One temporary terminal-only office connection to a selected catalog entry. Losing it does not end the original Console or its current Codex/PowerShell process.
 
 **Pairing window**:
 A short-lived, one-use host listener that registers one verified control-machine public key after local approval.
