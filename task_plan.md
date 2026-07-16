@@ -15,7 +15,7 @@ Replace the unsafe Windows-console scraping broker with a Happy-inspired session
 
 ## Current phase
 
-Phase 4: close the daily lifecycle so the office laptop exposes only live main-PC conversations.
+Phase 6: publish the single-window repair and complete real two-device acceptance.
 
 ## Containment status
 
@@ -82,6 +82,21 @@ Phase 4: close the daily lifecycle so the office laptop exposes only live main-P
 - [x] Prevent terminal navigation and cleared local input from indefinitely blocking an office message.
 - [ ] Perform the updated two-device acceptance: office `xcode` observes `queued` then `delivered`, and no inactive session is selectable.
 - **Status:** implementation complete; real-device acceptance pending update.
+
+### Phase 5: Single-window office terminal surface
+
+- [x] Parse the main-PC Codex terminal stream in a terminal model instead of writing raw control bytes into the office PowerShell.
+- [x] Render a single current-window layout: mirrored session viewport, dedicated message composer and delivery state.
+- [x] Keep message entry independent from the mirrored terminal, while preserving `queued → delivered` semantics.
+- [x] Add deterministic terminal-model and office-surface interaction tests.
+- **Status:** implementation complete (`OFFICE_TERMINAL_SURFACE=PASS`, `OFFICE_CLIENT_SINGLE_WINDOW=PASS`); real-device acceptance awaits package update.
+
+### Phase 6: Publish and real-device acceptance
+
+- [ ] Push the repaired package to GitHub.
+- [ ] Update both devices after closing active managed runners on the main PC.
+- [ ] Confirm on the paired office laptop that a message visibly reaches `Delivered` and appears in the existing main Codex conversation.
+- **Status:** in progress
 
 ## Design decisions
 

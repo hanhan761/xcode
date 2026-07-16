@@ -104,7 +104,11 @@ flowchart LR
   not an interactive shell. It bridges encrypted SSH/Tailscale stdio frames to
   the broker and may not execute arbitrary host commands.
 - **Office client** is invoked by `xcode`. It renders the managed terminal and
-  sends complete user messages through the input arbiter.
+  sends complete user messages through the input arbiter. Its
+  `OfficeTerminalSurface` is a terminal-model module: it consumes the remote
+  ANSI stream and exposes only visible text lines to a single current-window
+  PowerShell layout. The mirror, composer and delivery status never compete
+  for the same remote cursor.
 
 The first implementation gate is a Windows ConPTY proof that can start,
 display, resize, interrupt, and reliably terminate one native Codex child.
@@ -165,3 +169,6 @@ external collaborator to coordinate its input safely.
 7. Abnormal runner exit removes session state and all child/sidecar resources;
    an orphaned state file is also excluded and cleaned by the gateway's liveness
    check.
+8. The office client opens no second terminal window. It restores the calling
+   PowerShell after disconnect, renders remote ANSI in its mirror viewport, and
+   keeps its message composer separate from the remote terminal cursor.

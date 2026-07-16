@@ -66,6 +66,9 @@ async function main() {
     await waitFor(() => output.join('').includes('READY'), 5000, 'the managed session to start');
     bridge = startGatewayAttachment({ localAppData, sessionId: session.sessionId });
     await waitFor(() => bridge.frames.some((frame) => frame.type === 'attached'), 5000, 'the forced SSH gateway attachment');
+    const attached = bridge.frames.find((frame) => frame.type === 'attached');
+    assert.equal(attached.cols, 120, 'The gateway did not report the managed terminal width.');
+    assert.equal(attached.rows, 36, 'The gateway did not report the managed terminal height.');
 
     session.submitLocal('main-message\r');
     bridge.child.stdin.write(`${JSON.stringify({ type: 'message', messageId: 'office-message-1', text: 'office-message' })}\n`);
