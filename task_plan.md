@@ -94,6 +94,7 @@ Phase 6: publish the single-window repair and complete real two-device acceptanc
 ### Phase 6: Publish and real-device acceptance
 
 - [x] Push the repaired package to GitHub (`20230a3`).
+- [x] Add a deterministic two-machine simulation that runs the office client through the real forced gateway into a managed main-PC PTY (`TWO_MACHINE_COLLABORATION_E2E=PASS`).
 - [ ] Update both devices after closing active managed runners on the main PC.
 - [ ] Confirm on the paired office laptop that a message visibly reaches `Delivered` and appears in the existing main Codex conversation.
 - **Status:** in progress
