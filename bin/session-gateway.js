@@ -13,20 +13,63 @@ function fail(message) {
   process.exit(126);
 }
 
-function listSessions() {
+function isSessionState(state) {
+  return validSessionId.test(state.sessionId) &&
+    typeof state.sessionToken === 'string' && state.sessionToken.length > 0 &&
+    typeof state.pipeName === 'string' && state.pipeName.startsWith('\\\\.\\pipe\\xcode-session-');
+}
+
+function isProcessAlive(processId) {
+  if (!Number.isInteger(processId) || processId <= 0) { return false; }
+  try {
+    process.kill(processId, 0);
+    return true;
+  }
+  catch { return false; }
+}
+
+function probePipe(pipeName, timeoutMs = 250) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const socket = net.createConnection(pipeName);
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    function finish(isReachable) {
+      if (settled) { return; }
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(isReachable);
+    }
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+  });
+}
+
+async function listSessions() {
   if (!fs.existsSync(stateRoot)) { return []; }
-  return fs.readdirSync(stateRoot, { withFileTypes: true })
+  const entries = fs.readdirSync(stateRoot, { withFileTypes: true })
     .filter((entry) => entry.isFile() && validSessionId.test(entry.name.replace(/\.json$/, '')))
-    .flatMap((entry) => {
+    .map(async (entry) => {
+      const statePath = path.join(stateRoot, entry.name);
       try {
-        const state = JSON.parse(fs.readFileSync(path.join(stateRoot, entry.name), 'utf8'));
-        if (!validSessionId.test(state.sessionId) || typeof state.pipeName !== 'string' || !state.pipeName.startsWith('\\\\.\\pipe\\xcode-session-')) {
-          return [];
+        const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+        if (!isSessionState(state) || state.ready === false) {
+          return null;
         }
-        return [{ sessionId: state.sessionId, cwd: state.cwd, createdAt: state.createdAt }];
+        if (Object.hasOwn(state, 'processId') && !isProcessAlive(state.processId)) {
+          fs.rmSync(statePath, { force: true });
+          return null;
+        }
+        if (!await probePipe(state.pipeName)) {
+          fs.rmSync(statePath, { force: true });
+          return null;
+        }
+        return { sessionId: state.sessionId, cwd: state.cwd, createdAt: state.createdAt };
       }
-      catch { return []; }
-    })
+      catch { return null; }
+    });
+  return (await Promise.all(entries))
+    .filter(Boolean)
     .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
 }
 
@@ -35,8 +78,12 @@ function readSession(sessionId) {
   const statePath = path.join(stateRoot, `${sessionId}.json`);
   try {
     const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-    if (state.sessionId !== sessionId || typeof state.sessionToken !== 'string' || !state.sessionToken || typeof state.pipeName !== 'string' || !state.pipeName.startsWith('\\\\.\\pipe\\xcode-session-')) {
+    if (state.sessionId !== sessionId || !isSessionState(state) || state.ready === false) {
       fail('invalid session state');
+    }
+    if (Object.hasOwn(state, 'processId') && !isProcessAlive(state.processId)) {
+      fs.rmSync(statePath, { force: true });
+      fail('managed session is unavailable');
     }
     return state;
   }
@@ -61,7 +108,9 @@ if (parts.length === 2 && parts[0] === 'xcode-gateway' && parts[1] === 'probe') 
   process.stdout.write('XCODE_GATEWAY_OK\n');
 }
 else if (parts.length === 2 && parts[0] === 'xcode-gateway' && parts[1] === 'list') {
-  process.stdout.write(`${JSON.stringify({ sessions: listSessions() })}\n`);
+  listSessions()
+    .then((sessions) => process.stdout.write(`${JSON.stringify({ sessions })}\n`))
+    .catch((error) => fail(`could not list managed sessions: ${error.message}`));
 }
 else if (parts.length === 3 && parts[0] === 'xcode-gateway' && parts[1] === 'attach') {
   attach(parts[2]);

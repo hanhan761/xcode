@@ -15,7 +15,7 @@ Replace the unsafe Windows-console scraping broker with a Happy-inspired session
 
 ## Current phase
 
-Phase 3: execute the real two-device acceptance run for the implemented secure session handoff.
+Phase 4: close the daily lifecycle so the office laptop exposes only live main-PC conversations.
 
 ## Containment status
 
@@ -67,11 +67,20 @@ Phase 3: execute the real two-device acceptance run for the implemented secure s
 
 - [x] Prove a managed Windows ConPTY child can deliver terminal output and lifecycle events without `AttachConsole` discovery.
 - [x] Implement and exercise local collaborative message serialization in `SessionRunner`.
-- [ ] Execute the two-device acceptance run: `xcode main`, `xcode office`, main `codex`, office `xcode`.
+- [x] Execute the two-device acceptance run: `xcode main`, `xcode office`, main `codex`, office `xcode`.
 - [x] Enforce collaborative input ordering and reliable cleanup.
 - [ ] Complete the real-device review of message-origin visibility in the Codex TUI.
 - [ ] Test reconnect, concurrent input serialization, stop/revoke and office-device compromise boundaries on the two real devices.
-- **Status:** pending
+- **Status:** complete for basic two-device collaboration; final real-device stress testing remains follow-up work.
+
+### Phase 4: Active-session lifecycle closure
+
+- [x] Treat “active” as a verifiable invariant: a listed session must still have a live managed Codex child and a reachable local pipe.
+- [x] Exclude and clean stale state files from the forced SSH gateway before the office laptop sees them.
+- [x] Make the office selector clearly state that it lists only currently active main-PC conversations.
+- [x] Add deterministic stale-state and forced-SSH interaction regression harnesses.
+- [ ] Perform the updated two-device acceptance: office `xcode` observes `queued` then `delivered`, and no inactive session is selectable.
+- **Status:** implementation complete; real-device acceptance pending update.
 
 ## Design decisions
 
@@ -82,3 +91,4 @@ Phase 3: execute the real two-device acceptance run for the implemented secure s
 | Collaborative input arbiter | Both devices observe one conversation, while complete messages are serialized so their keystrokes cannot corrupt each other. |
 | Happy-style runner/wrapper for new sessions | It is the reliable way to preserve context and create an auditable remote-control boundary. |
 | Explicit migration for existing sessions | Windows Console attach can be a best-effort import path, not a silent default. |
+| Active-only office catalog | The office laptop reflects live managed sessions, not saved Codex history or orphaned state files. |

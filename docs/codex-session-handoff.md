@@ -65,7 +65,10 @@ stop(session) -> void
 
 A `Session` contains an opaque id, Codex thread id when known, working
 directory, title, creation time, active observers and terminal dimensions. It
-is not a Windows process id exposed to a remote device.
+is not a Windows process id exposed to a remote device. A session is listable
+only while its managed child remains alive and its private named pipe accepts a
+local gateway probe; stale state is removed before it can reach an office
+laptop.
 
 `InputArbiter` makes the session collaborative rather than a remote takeover.
 Both surfaces observe the same output. The main PC retains its ordinary
@@ -147,8 +150,9 @@ external collaborator to coordinate its input safely.
 
 1. Typing `codex` on the main PC starts one managed child without opening a
    second general PowerShell shell.
-2. `xcode` on a paired office laptop lists only that session and can see its
-   output, including work performed locally before it attached.
+2. `xcode` on a paired office laptop lists only currently active managed
+   sessions and can see their output, including work performed locally before
+   it attached. Saved but inactive history is never listed.
 3. An office message appears in the main-PC Codex terminal and becomes part of
    the same Codex conversation; local and remote keystrokes never interleave.
 4. Reconnect preserves the Codex session and terminal state; stopping xcode
@@ -156,4 +160,6 @@ external collaborator to coordinate its input safely.
 5. Device revocation closes the remote stream and denies later attachment.
 6. The broker enumerates zero unrelated PowerShell, CMD, Windows Terminal, or
    Codex processes.
-7. Abnormal runner exit removes session state and all child/sidecar resources.
+7. Abnormal runner exit removes session state and all child/sidecar resources;
+   an orphaned state file is also excluded and cleaned by the gateway's liveness
+   check.

@@ -38,11 +38,11 @@ async function chooseSession(sshConfig) {
   const output = await collectOutput(runGateway(sshConfig, ['list'], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }));
   const response = JSON.parse(output);
   if (!Array.isArray(response.sessions) || response.sessions.length === 0) {
-    throw new Error('The main PC has no managed Codex session yet. Start or resume one there with codex.');
+    throw new Error('The main PC has no active managed Codex session. Start or resume one there with codex. Saved history is not listed here.');
   }
   if (response.sessions.length === 1) { return response.sessions[0]; }
   if (!process.stdin.isTTY) { return response.sessions[0]; }
-  process.stdout.write('Managed Codex sessions on the main PC:\n');
+  process.stdout.write('Currently active managed Codex sessions on the main PC:\n');
   response.sessions.forEach((session, index) => process.stdout.write(`  [${index + 1}] ${session.cwd || 'unknown folder'}  ${session.createdAt || ''}\n`));
   const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
@@ -91,7 +91,12 @@ async function main() {
       try { frame = JSON.parse(line); }
       catch { throw new Error('The main PC sent an invalid xcode session frame.'); }
       if (frame.type === 'snapshot' || frame.type === 'output') { writeOutput(frame); }
-      if (frame.type === 'attached') { attached = true; }
+      if (frame.type === 'attached') {
+        attached = true;
+        process.stdout.write('\n[xcode] Connected. Type a complete message and press Enter to send it to the main Codex conversation.\n');
+      }
+      if (frame.type === 'queued') { process.stdout.write('\n[xcode] Message queued for the main Codex session.\n'); }
+      if (frame.type === 'delivered') { process.stdout.write('\n[xcode] Delivered to the main Codex terminal.\n'); }
       if (frame.type === 'error') { process.stderr.write(`\nxcode: ${frame.message || frame.code || 'message was not delivered'}\n`); }
     }
   });
