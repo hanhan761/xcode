@@ -1,4 +1,4 @@
 @echo off
 setlocal EnableExtensions
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\xcode.ps1" -RepositoryRoot "%~dp0" %*
+node.exe "%~dp0bin\xcode.js" %*
 exit /b %ERRORLEVEL%

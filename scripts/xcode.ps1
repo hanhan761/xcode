@@ -151,7 +151,7 @@ switch ($installedRole) {
             }
             'share' { Write-Host 'Managed Codex sessions are shared automatically. Start one with: codex' -ForegroundColor Cyan }
             'session' {
-                if ($Command.Count -lt 2 -or $Command[1].ToLowerInvariant() -ne 'run') { throw 'Usage: xcode session run -- [codex arguments]' }
+                if ($Command.Count -lt 2 -or $Command[1].ToLowerInvariant() -ne 'run') { throw 'Usage: xcode session run [codex arguments]' }
                 $arguments = @($Command | Select-Object -Skip 2)
                 if ($arguments.Count -and $arguments[0] -eq '--') { $arguments = @($arguments | Select-Object -Skip 1) }
                 Start-XcodeManagedCodex -CodexArguments $arguments

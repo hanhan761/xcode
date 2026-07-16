@@ -175,6 +175,8 @@ Assert ($helpText -match 'xcode update') 'The xcode dispatcher does not expose s
 Assert ($helpText -match 'codex') 'The xcode dispatcher does not describe the preserved Codex command.'
 Assert ((Get-Content -Raw $dispatcher) -match 'Start-XcodeManagedCodex') 'The main PC does not start managed Codex sessions.'
 Assert ((Get-Content -Raw $dispatcher) -match 'Connect-XcodeOfficeSharedTerminal') 'Office xcode does not attach to the shared host terminal.'
+Assert ($mainScript -notmatch 'session run --') 'The main-PC codex profile still emits a PowerShell-incompatible argument separator.'
+Assert ((Get-Content -Raw $nodeLauncher) -match 'PowerShell -File treats a bare') 'The npm launcher does not tolerate the legacy managed-session separator.'
 Assert ((Get-Content -Raw $sessionRunner) -match 'node-pty') 'The managed session runner does not use a private pseudoterminal.'
 Assert ((Get-Content -Raw $sessionRunner) -match 'xcode-session-') 'The managed session runner does not create a scoped session pipe.'
 Assert ((Get-Content -Raw $sessionGateway) -match 'SSH_ORIGINAL_COMMAND') 'The gateway does not enforce the original SSH command boundary.'
@@ -183,7 +185,17 @@ Assert ((Get-Content -Raw $sessionClient) -match "'attach'") 'The office client 
 Assert ((Get-Content -Raw $sessionClient) -match "'message'") 'The office client does not submit collaborative messages.'
 $nodeHelpText = (& node.exe $nodeLauncher help | Out-String)
 Assert ($LASTEXITCODE -eq 0 -and $nodeHelpText -match 'xcode office') 'The npm xcode binary cannot launch the dispatcher.'
-Assert ((Get-Content -Raw (Join-Path $root 'xcode.cmd')) -match 'scripts\\xcode\.ps1') 'The repository xcode bootstrap does not use the dispatcher.'
+Assert ((Get-Content -Raw (Join-Path $root 'xcode.cmd')) -match 'bin\\xcode\.js') 'The repository xcode bootstrap does not use the safe npm launcher.'
+$previousErrorActionPreference = $ErrorActionPreference
+try {
+    $ErrorActionPreference = 'Continue'
+    $legacySeparatorOutput = (& node.exe $nodeLauncher -Role office session run -- resume 019f59e5-1a83-73f1-a2e1-2798fd7141e8 2>&1 | Out-String)
+    $legacySeparatorExitCode = $LASTEXITCODE
+}
+finally { $ErrorActionPreference = $previousErrorActionPreference }
+Assert ($legacySeparatorExitCode -ne 0) 'The forced office-role legacy separator probe unexpectedly succeeded.'
+Assert ($legacySeparatorOutput -notmatch 'AmbiguousParameter|parameter name .*. is ambiguous') 'The legacy managed-session separator still reaches PowerShell as an ambiguous parameter.'
+Assert ($legacySeparatorOutput -match 'Unknown office-laptop xcode command: session') 'The legacy managed-session separator probe did not reach the xcode dispatcher.'
 Assert ((Get-Content -Raw (Join-Path $root 'install-main.cmd')) -match 'xcode\.cmd" main') 'The main adapter does not route through xcode main.'
 Assert ((Get-Content -Raw (Join-Path $root 'install-office.cmd')) -match 'xcode\.cmd" office') 'The office adapter does not route through xcode office.'
 Assert ((Get-Content -Raw (Join-Path $root 'pair-office.cmd')) -match 'xcode\.cmd" pair') 'The legacy pairing adapter does not route through xcode pair.'

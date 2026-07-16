@@ -19,7 +19,7 @@ function global:codex {
     $xcodeLauncher = Get-Command xcode.cmd -CommandType Application -ErrorAction SilentlyContinue
     if (-not $xcodeLauncher) { $xcodeLauncher = Get-Command xcode -CommandType Application -ErrorAction SilentlyContinue }
     if (-not $xcodeLauncher) { throw 'xcode is unavailable. Reinstall it with npm, then open a new PowerShell window.' }
-    & $xcodeLauncher.Source session run -- @($XcodeCodexArguments | ForEach-Object { [string]$_ })
+    & $xcodeLauncher.Source session run @($XcodeCodexArguments | ForEach-Object { [string]$_ })
 }
 # <<< xcode managed codex <<<
 '@
