@@ -6,7 +6,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const pty = require('node-pty');
-const { startManagedSession } = require('../lib/session-runner');
+
+const packageRoot = path.resolve(process.env.XCODE_PACKAGE_ROOT || path.join(__dirname, '..'));
+const { startManagedSession } = require(path.join(packageRoot, 'lib', 'session-runner'));
 
 function waitFor(predicate, timeoutMs, description) {
   return new Promise((resolve, reject) => {
@@ -35,7 +37,7 @@ async function main() {
   const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xcode-two-machine-'));
   const mainLocalAppData = path.join(fixtureRoot, 'main-localappdata');
   const stateRoot = path.join(mainLocalAppData, 'XcodeRemote', 'managed-sessions');
-  const gateway = path.join(__dirname, '..', 'bin', 'session-gateway.js');
+  const gateway = path.join(packageRoot, 'bin', 'session-gateway.js');
   const officeSshWrapper = path.join(fixtureRoot, 'office-ssh.cmd');
   const command = process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe';
   const node = process.execPath;
@@ -83,7 +85,7 @@ async function main() {
       name: 'xterm-256color',
       cols: 100,
       rows: 24,
-      cwd: path.join(__dirname, '..'),
+      cwd: packageRoot,
       env: {
         ...process.env,
         XCODE_SSH_PATH: command,
@@ -107,7 +109,7 @@ async function main() {
     assert.match(officeOutput, /\x1b\[\?1049h/, 'The office client did not use a single current-window terminal UI.');
 
     office.write('\u0003');
-    console.log('TWO_MACHINE_COLLABORATION_E2E=PASS');
+    console.log(`TWO_MACHINE_COLLABORATION_E2E=PASS package=${packageRoot}`);
   }
   finally {
     if (office) { office.kill(); }
