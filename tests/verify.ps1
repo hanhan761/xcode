@@ -144,7 +144,7 @@ Assert ($first -match 'Subsystem sftp sftp-server.exe') 'An unmanaged SSH direct
 Assert (([regex]::Matches($first, 'BEGIN XCODE REMOTE MANAGED BLOCK')).Count -eq 1) 'SSH managed block was duplicated.'
 
 Write-Host '5. Validate collaborative-session entry points and credential hygiene'
-$entries = @('xcode.cmd', 'install-main.cmd', 'install-office.cmd', 'pair-office.cmd', 'unpair-office.cmd')
+$entries = @('xcode.cmd', 'install-main.cmd', 'install-office.cmd', 'pair-office.cmd', 'unpair-office.cmd', '3-resume-last-codex.cmd')
 foreach ($entry in $entries) { Assert (Test-Path (Join-Path $root $entry)) "Missing $entry." }
 $officeScript = Get-Content -Raw (Join-Path $scripts 'install-office.ps1')
 $mainScript = Get-Content -Raw (Join-Path $scripts 'install-main.ps1')
@@ -186,6 +186,8 @@ Assert ($LASTEXITCODE -eq 0 -and $nodeHelpText -match 'xcode office') 'The npm x
 Assert ((Get-Content -Raw (Join-Path $root 'xcode.cmd')) -match 'scripts\\xcode\.ps1') 'The repository xcode bootstrap does not use the dispatcher.'
 Assert ((Get-Content -Raw (Join-Path $root 'install-main.cmd')) -match 'xcode\.cmd" main') 'The main adapter does not route through xcode main.'
 Assert ((Get-Content -Raw (Join-Path $root 'install-office.cmd')) -match 'xcode\.cmd" office') 'The office adapter does not route through xcode office.'
+Assert ((Get-Content -Raw (Join-Path $root '3-resume-last-codex.cmd')) -match 'codex resume --last') 'The latest-conversation launcher does not resume the previous Codex conversation.'
+Assert ((Get-Content -Raw (Join-Path $root '3-resume-last-codex.cmd')) -notmatch '-NoProfile') 'The latest-conversation launcher would bypass the managed codex profile entrypoint.'
 Assert ((Get-Content -Raw (Join-Path $root 'pair-office.cmd')) -match 'xcode\.cmd" pair') 'The legacy pairing adapter does not route through xcode pair.'
 Assert ($officeScript -match '\[switch\]\$SetupOnly') 'The office setup cannot be run independently of pairing.'
 Assert ($officeScript -match '\[switch\]\$PairOnly') 'The office pairing client cannot be run independently of setup.'
