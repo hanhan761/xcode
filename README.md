@@ -13,23 +13,23 @@ flowchart LR
     E[办公本：xcode 终端选择器] ==>|固定主机密钥、专用 SSH key、Tailscale| D
 ```
 
-## 日常使用
+## 最简连接（已安装、已配对）
 
-主力机：首次日常使用时，在**任意一个普通 PowerShell** 中执行一次：
-
-```powershell
-xcode
-# 或 xcode share
-```
-
-办公本：打开 PowerShell，执行：
+1. 主力机：在**任意一个普通 PowerShell** 中执行一次：
 
 ```powershell
 xcode
-# 或 xcode attach
 ```
 
-若主力机有多个终端，办公本会显示编号列表。选择后即可正常对话；按 `Ctrl+G` 返回工作区列表并刷新，按 `Ctrl+C` 仅断开办公本画面。两种操作都不会结束主力机的终端、其中命令或 Codex 对话。
+2. 办公本：打开 PowerShell，执行：
+
+```powershell
+xcode
+```
+
+3. 若出现终端列表，输入编号并回车。此后就是该主力机原终端：可以继续已有 Codex 对话、输入命令和查看输出。
+
+`Ctrl+G` 回到并刷新终端列表；`Ctrl+C` 仅断开办公本。它们都不会停止主力机终端、命令或 Codex 对话。
 
 主力机不需要在每个窗口执行 `xcode`。即使目标 Codex CLI 正在占用输入行，也可以在另一扇普通 PowerShell 启动一次工作区 broker；它不会创建新对话或改变已有窗口。
 
