@@ -6,7 +6,7 @@ Deliver a GitHub-installable npm CLI whose role-aware `xcode` command owns setup
 
 ## Current Phase
 
-Phase 4: verification and release.
+Complete.
 
 ## Phases
 
@@ -36,8 +36,9 @@ Phase 4: verification and release.
 
 - [x] Run tests in Windows PowerShell 5.1 and PowerShell 7.
 - [x] Verify npm package contents without publishing.
-- [ ] Review the diff, commit and push `main`.
-- **Status:** in_progress
+- [x] Install the GitHub package in an isolated npm prefix and run its CLI.
+- [x] Review the diff, commit and push `main`.
+- **Status:** complete
 
 ## Decisions Made
 

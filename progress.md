@@ -30,8 +30,10 @@
 
 ### Phase 4: Verification and release
 
-- **Status:** in_progress
+- **Status:** complete
 - Passed: Windows PowerShell 5.1 verification, PowerShell 7 verification and npm package dry-run.
+- Pushed `7c56fd2` to `origin/main`.
+- Installed `github:hanhan761/xcode#main` into an isolated npm prefix and verified its Node binary renders `xcode help`; temporary files were removed.
 - Files modified:
   - `task_plan.md`
   - `findings.md`
