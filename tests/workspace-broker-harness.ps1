@@ -71,7 +71,7 @@ try {
     Assert (-not $first.HasExited -and -not $second.HasExited) 'The isolated workspace targets did not stay alive.'
 
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $broker = Start-Process -FilePath $powershell -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $BrokerScript, '-StatePath', $statePath, '-RelayScript', $RelayScript, '-DiagnosticPath', $brokerDiagnosticPath) -WindowStyle Hidden -RedirectStandardOutput $brokerOutputPath -RedirectStandardError $brokerErrorPath -PassThru
+    $broker = Start-Process -FilePath $powershell -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $BrokerScript, '-StatePath', $statePath, '-DiagnosticPath', $brokerDiagnosticPath) -WindowStyle Hidden -RedirectStandardOutput $brokerOutputPath -RedirectStandardError $brokerErrorPath -PassThru
     $deadline = (Get-Date).AddSeconds(20)
     $workspace = $null
     do {

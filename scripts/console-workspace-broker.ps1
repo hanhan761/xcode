@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$StatePath,
-    [string]$RelayScript = (Join-Path $PSScriptRoot 'console-relay-host.ps1'),
+    [string]$RelayScript = '',
     [string]$DiagnosticPath = '',
     [ValidateRange(250, 10000)][int]$ScanIntervalMilliseconds = 1000
 )
@@ -10,6 +10,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'XcodeRemote.Common.ps1')
 
+if (-not $RelayScript) { $RelayScript = Join-Path $PSScriptRoot 'console-relay-host.ps1' }
 if (-not (Test-Path -LiteralPath $RelayScript -PathType Leaf)) { throw "The console relay worker is missing: $RelayScript" }
 $stateDirectory = Split-Path -Parent $StatePath
 if (-not (Test-Path -LiteralPath $stateDirectory)) { New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null }
