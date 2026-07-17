@@ -97,9 +97,10 @@ Phase 6: publish the single-window repair and complete real two-device acceptanc
 - [x] Add a deterministic two-machine simulation that runs the office client through the real forced gateway into a managed main-PC PTY (`TWO_MACHINE_COLLABORATION_E2E=PASS`).
 - [x] Gate office messages while the managed Codex terminal displays its directory-trust safety prompt (`CODEX_READINESS_GATE=PASS`).
 - [x] Verify an isolated native Codex accepts a remote challenge and generates a distinct acknowledgement (`LIVE_CODEX_REMOTE_INPUT=PASS`).
+- [x] Pack the exact npm artifact into an isolated temporary prefix and rerun the readiness, two-machine and native-Codex probes against that installed artifact (`CODEX_READINESS_GATE=PASS`, `TWO_MACHINE_COLLABORATION_E2E=PASS`, `LIVE_CODEX_REMOTE_INPUT=PASS`).
 - [ ] Update both devices after closing active managed runners on the main PC.
 - [ ] Confirm on the paired office laptop that a message visibly reaches `Delivered` and appears in the existing main Codex conversation.
-- **Status:** in progress
+- **Status:** source and packed-artifact release checks are complete; real-device acceptance still requires updating both devices after the main PC's old managed runners are closed.
 
 ## Design decisions
 

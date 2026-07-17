@@ -11,8 +11,17 @@ if (process.env.XCODE_RUN_LIVE_CODEX_PROBE !== '1') {
   process.exit(2);
 }
 
-const packageRoot = path.join(process.env.APPDATA || '', 'npm', 'node_modules', 'xcode-remote');
+const packageRoot = path.resolve(process.env.XCODE_PACKAGE_ROOT || path.join(process.env.APPDATA || '', 'npm', 'node_modules', 'xcode-remote'));
 const { startManagedSession } = require(path.join(packageRoot, 'lib', 'session-runner'));
+const { Terminal } = require(require.resolve('@xterm/headless', { paths: [packageRoot] }));
+
+const MAX_OUTPUT_CHARS = 1_000_000;
+let stopActiveSession = null;
+const hardStop = setTimeout(() => {
+  process.stderr.write('LIVE_CODEX_REMOTE_INPUT=TIMEOUT after 110 seconds; stopping the isolated probe session.\n');
+  stopActiveSession?.();
+  setTimeout(() => process.exit(1), 1_000).unref();
+}, 110_000);
 
 function findNativeCodex() {
   const vendors = path.join(process.env.APPDATA || '', 'npm', 'node_modules', '@openai', 'codex', 'node_modules', '@openai');
@@ -27,7 +36,7 @@ function findNativeCodex() {
   throw new Error('The native Codex executable is not installed.');
 }
 
-function waitFor(predicate, timeoutMs, description, output) {
+function waitFor(predicate, timeoutMs, description, getOutput) {
   return new Promise((resolve, reject) => {
     const deadline = Date.now() + timeoutMs;
     const timer = setInterval(() => {
@@ -37,15 +46,26 @@ function waitFor(predicate, timeoutMs, description, output) {
       }
       else if (Date.now() > deadline) {
         clearInterval(timer);
-        const tail = output.join('').slice(-4_000);
+        const tail = getOutput().slice(-4_000);
         reject(new Error(`Timed out waiting for ${description}. Terminal tail:\n${tail}`));
       }
     }, 50);
   });
 }
 
-function wait(delayMs) {
-  return new Promise((resolve) => setTimeout(resolve, delayMs));
+function terminalScreenText(terminal) {
+  const buffer = terminal.buffer.active;
+  const lines = [];
+  for (let row = 0; row < terminal.rows; row += 1) {
+    const line = buffer.getLine(buffer.viewportY + row);
+    if (line) { lines.push(line.translateToString(true)); }
+  }
+  return lines.join('\n');
+}
+
+function isDirectoryTrustPrompt(terminal) {
+  const screen = terminalScreenText(terminal);
+  return screen.includes('Do you trust the contents of this directory?') && screen.includes('Press enter to continue');
 }
 
 async function main() {
@@ -54,29 +74,45 @@ async function main() {
   const challenge = `XCODE_CHALLENGE_${Date.now().toString(36).toUpperCase()}`;
   const acknowledgement = challenge.replace('CHALLENGE', 'ACK');
   const message = `Reply with exactly the token formed by replacing CHALLENGE with ACK in: ${challenge}. Do not use tools and do not modify files.`;
-  const output = [];
+  let output = '';
+  let terminalWrites = 0;
   let primaryError = null;
+  const terminal = new Terminal({ cols: 120, rows: 36, scrollback: 2_000, allowProposedApi: true, convertEol: false });
   const session = startManagedSession({
     file: findNativeCodex(),
     args: ['--sandbox', 'read-only', '--ask-for-approval', 'never', '--cd', workspace],
     cwd: workspace,
     stateRoot,
   });
+  stopActiveSession = () => session.stop();
 
   try {
-    session.onOutput((data) => output.push(data));
-    await waitFor(() => output.join('').length > 0, 15_000, 'the real Codex TUI to initialize', output);
-    // Codex's full-screen renderer places cursor controls between visual words,
-    // so raw-byte text matching cannot safely identify the trust prompt. A
-    // blank Enter accepts its selected default here; it is a no-op once Codex
-    // has already reached an empty conversation composer.
-    await wait(3_000);
+    session.onOutput((data) => {
+      output = (output + data).slice(-MAX_OUTPUT_CHARS);
+      terminalWrites += 1;
+      terminal.write(data, () => { terminalWrites -= 1; });
+    });
+    await waitFor(() => output.length > 0, 15_000, 'the real Codex TUI to initialize', () => output);
+    await waitFor(
+      () => terminalWrites === 0 && isDirectoryTrustPrompt(terminal),
+      20_000,
+      'Codex to show its directory-trust prompt',
+      () => output,
+    );
+    // The production runner uses the same screen-state condition to hold an
+    // office message. Accept the prompt locally only after it is actually
+    // visible, rather than racing a blind delayed Enter against startup.
     session.submitLocal('\r');
-    await wait(1_000);
+    await waitFor(
+      () => terminalWrites === 0 && !isDirectoryTrustPrompt(terminal),
+      10_000,
+      'the main PC local action to clear the directory-trust prompt',
+      () => output,
+    );
     await session.submitRemoteMessage(message);
-    await waitFor(() => output.join('').includes(acknowledgement), 90_000, 'the real Codex TUI to answer the remote challenge', output);
-    assert.match(output.join(''), new RegExp(acknowledgement), 'The real Codex TUI did not generate the remote challenge acknowledgement.');
-    console.log('LIVE_CODEX_REMOTE_INPUT=PASS');
+    await waitFor(() => output.includes(acknowledgement), 70_000, 'the real Codex TUI to answer the remote challenge', () => output);
+    assert.match(output, new RegExp(acknowledgement), 'The real Codex TUI did not generate the remote challenge acknowledgement.');
+    console.log(`LIVE_CODEX_REMOTE_INPUT=PASS package=${packageRoot}`);
   }
   catch (error) {
     primaryError = error;
@@ -84,6 +120,7 @@ async function main() {
   }
   finally {
     session.stop();
+    stopActiveSession = null;
     await Promise.race([
       session.completed,
       new Promise((resolve) => setTimeout(resolve, 5_000)),
@@ -95,12 +132,17 @@ async function main() {
       if (!primaryError) { throw cleanupError; }
       process.stderr.write(`xcode probe cleanup: ${cleanupError.message}\n`);
     }
+    terminal.dispose();
   }
 }
 
 main().then(
-  () => process.exit(0),
+  () => {
+    clearTimeout(hardStop);
+    process.exit(0);
+  },
   (error) => {
+    clearTimeout(hardStop);
     console.error(error.stack || error.message);
     process.exit(1);
   },

@@ -5,7 +5,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { startManagedSession } = require('../lib/session-runner');
+const packageRoot = path.resolve(process.env.XCODE_PACKAGE_ROOT || path.join(__dirname, '..'));
+const { startManagedSession } = require(path.join(packageRoot, 'lib', 'session-runner'));
 
 function waitFor(predicate, timeoutMs, description) {
   return new Promise((resolve, reject) => {
@@ -47,7 +48,7 @@ async function main() {
     await waitFor(() => output.join('').includes('READY FOR CODEX MESSAGES'), 5_000, 'the main PC to clear the trust prompt');
     await remote;
     await waitFor(() => output.join('').includes('OFFICE:remote-after-trust'), 5_000, 'the queued office message after Codex became ready');
-    console.log('CODEX_READINESS_GATE=PASS');
+    console.log(`CODEX_READINESS_GATE=PASS package=${packageRoot}`);
   }
   finally {
     session.stop();
