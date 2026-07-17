@@ -8,27 +8,6 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'XcodeRemote.Common.ps1')
 
-function Install-XcodeCodexEntrypoint {
-    $profilePath = $PROFILE.CurrentUserAllHosts
-    $existing = if (Test-Path -LiteralPath $profilePath -PathType Leaf) { Get-Content -Raw -LiteralPath $profilePath } else { '' }
-    $block = @'
-# >>> xcode managed codex >>>
-function global:codex {
-    [CmdletBinding()]
-    param([Parameter(ValueFromRemainingArguments = $true)][object[]]$XcodeCodexArguments)
-    $xcodeLauncher = Get-Command xcode.cmd -CommandType Application -ErrorAction SilentlyContinue
-    if (-not $xcodeLauncher) { $xcodeLauncher = Get-Command xcode -CommandType Application -ErrorAction SilentlyContinue }
-    if (-not $xcodeLauncher) { throw 'xcode is unavailable. Reinstall it with npm, then open a new PowerShell window.' }
-    & $xcodeLauncher.Source session run @($XcodeCodexArguments | ForEach-Object { [string]$_ })
-}
-# <<< xcode managed codex <<<
-'@
-    $pattern = '(?s)# >>> xcode managed codex >>>.*?# <<< xcode managed codex <<<\s*'
-    $updated = if ($existing -match $pattern) { [regex]::Replace($existing, $pattern, $block + "`r`n") } else { $existing.TrimEnd() + "`r`n`r`n" + $block + "`r`n" }
-    Write-XcodeUtf8File -Path $profilePath -Content $updated
-    return $profilePath
-}
-
 if (-not [Environment]::Is64BitOperatingSystem) { throw 'xcode remote requires 64-bit Windows.' }
 $currentSid = Get-XcodeCurrentSid
 $currentUser = $env:USERNAME
@@ -102,7 +81,8 @@ $userState = [ordered]@{
     configuredAt = (Get-Date).ToUniversalTime().ToString('o')
 }
 Write-XcodeUtf8File -Path (Join-Path $userRoot 'host-user.json') -Content ($userState | ConvertTo-Json -Depth 5)
-$profilePath = Install-XcodeCodexEntrypoint
+$profilePath = $PROFILE.CurrentUserAllHosts
+[void](Install-XcodeManagedCodexProfileEntrypoint -ProfilePath $profilePath)
 
 Write-Host ''
 Write-Host 'Main PC is ready.' -ForegroundColor Green

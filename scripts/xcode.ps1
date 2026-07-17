@@ -180,8 +180,13 @@ switch ($installedRole) {
             'share' { Write-Host 'Managed Codex sessions are shared automatically. Start one with: codex' -ForegroundColor Cyan }
             'session' {
                 if ($Command.Count -lt 2 -or $Command[1].ToLowerInvariant() -ne 'run') { throw 'Usage: xcode session run [codex arguments]' }
+                # Upgrading replaces this dispatcher before it can replace the
+                # already-loaded 1.4.11 profile wrapper. Repair it on the first
+                # post-update Codex launch without requiring setup or UAC.
+                $profileRepair = Install-XcodeManagedCodexProfileEntrypoint -ProfilePath $PROFILE.CurrentUserAllHosts
                 $arguments = @($Command | Select-Object -Skip 2)
                 if ($arguments.Count -and $arguments[0] -eq '--') { $arguments = @($arguments | Select-Object -Skip 1) }
+                $arguments = @(Resolve-XcodeManagedCodexArguments -Arguments $arguments -HadLegacyZeroArgumentBug:$profileRepair.HadLegacyZeroArgumentBug)
                 Start-XcodeManagedCodex -CodexArguments $arguments
             }
             'pair' {

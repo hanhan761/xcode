@@ -274,10 +274,9 @@ function Remove-XcodeMainRoleResidue {
     $profilePath = $PROFILE.CurrentUserAllHosts
     if (-not (Test-Path -LiteralPath $profilePath -PathType Leaf)) { return }
     $existing = Get-Content -Raw -LiteralPath $profilePath
-    $pattern = '(?s)# >>> xcode managed codex >>>.*?# <<< xcode managed codex <<<\s*'
-    $updated = [regex]::Replace($existing, $pattern, '')
+    $updated = Update-XcodeManagedCodexProfileContent -Content $existing
     if ($updated -ne $existing) {
-        Write-XcodeUtf8File -Path $profilePath -Content $updated.TrimEnd()
+        Write-XcodeUtf8File -Path $profilePath -Content $updated
         Write-Host 'Removed the main-PC Codex profile entrypoint from this office laptop.' -ForegroundColor Yellow
     }
 }

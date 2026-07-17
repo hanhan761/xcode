@@ -158,6 +158,7 @@ $sessionRunner = Join-Path $root 'lib\session-runner.js'
 $appServerSession = Join-Path $root 'lib\app-server-session.js'
 $appServerHost = Join-Path $root 'lib\app-server-host.js'
 $appServerHostWatchdog = Join-Path $root 'bin\app-server-host-watchdog.js'
+$appServerPtyHost = Join-Path $root 'bin\app-server-pty-host.js'
 $windowsShellShim = Join-Path $root 'lib\windows-shell-shim.js'
 $hiddenProcessSource = Join-Path $root 'scripts\HiddenProcessShim.cs'
 $hiddenProcessBuild = Join-Path $root 'scripts\build-hidden-process-shim.ps1'
@@ -184,6 +185,7 @@ $sharedSessionRunnerHarness = Join-Path $root 'tests\shared-session-runner-harne
 $semanticTwoMachineHarness = Join-Path $root 'tests\semantic-two-machine-e2e-harness.js'
 $hiddenProcessHarness = Join-Path $root 'tests\windows-hidden-console-host-harness.js'
 $liveHiddenWindowHarness = Join-Path $root 'tests\live-hidden-app-server-window-harness.js'
+$transientWindowProbeHarness = Join-Path $root 'tests\transient-window-event-probe-harness.js'
 $visibleWindowProbe = Join-Path $root 'tests\visible-child-window-probe.ps1'
 $roleHarness = Join-Path $root 'tests\role-resolution-harness.ps1'
 Assert (Test-Path -LiteralPath $dispatcher) 'The unified xcode dispatcher is missing.'
@@ -196,6 +198,7 @@ Assert (Test-Path -LiteralPath $sessionRunner) 'The managed session runner is mi
 Assert (Test-Path -LiteralPath $appServerSession) 'The one-thread Codex app-server authority is missing.'
 Assert (Test-Path -LiteralPath $appServerHost) 'The shared app-server host is missing.'
 Assert (Test-Path -LiteralPath $appServerHostWatchdog) 'The shared app-server host watchdog is missing.'
+Assert (Test-Path -LiteralPath $appServerPtyHost) 'The private app-server pseudoconsole host is missing.'
 Assert (Test-Path -LiteralPath $windowsShellShim) 'The Windows hidden-process environment is missing.'
 Assert (Test-Path -LiteralPath $hiddenProcessSource) 'The Windows hidden-process shim source is missing.'
 Assert (Test-Path -LiteralPath $hiddenProcessBuild) 'The Windows hidden-process shim builder is missing.'
@@ -222,6 +225,7 @@ Assert (Test-Path -LiteralPath $sharedSessionRunnerHarness) 'The shared-session 
 Assert (Test-Path -LiteralPath $semanticTwoMachineHarness) 'The semantic two-machine harness is missing.'
 Assert (Test-Path -LiteralPath $hiddenProcessHarness) 'The Windows hidden-process harness is missing.'
 Assert (Test-Path -LiteralPath $liveHiddenWindowHarness) 'The live hidden-window proof is missing.'
+Assert (Test-Path -LiteralPath $transientWindowProbeHarness) 'The transient-window event proof is missing.'
 Assert (Test-Path -LiteralPath $visibleWindowProbe) 'The visible-window probe is missing.'
 Assert (Test-Path -LiteralPath $roleHarness) 'The mixed-role resolution harness is missing.'
 $package = Get-Content -Raw -LiteralPath $packagePath | ConvertFrom-Json
@@ -243,6 +247,8 @@ Assert ((Get-Content -Raw $managedRunner) -match 'startSharedAppServerSession') 
 Assert ((Get-Content -Raw $appServerHost) -match "'app-server', '--listen'") 'The shared app-server host does not start a loopback Codex app-server.'
 Assert ((Get-Content -Raw $appServerHost) -match "'--disable', 'computer_use'") 'The terminal-only app-server can still launch the graphical Computer Use helper.'
 Assert ((Get-Content -Raw $appServerHost) -match 'runSharedAppServerWatchdog') 'The shared app-server host cannot clean stale runner leases.'
+Assert ((Get-Content -Raw $appServerHost) -match 'startPseudoconsoleAppServer') 'The shared app-server can still expose descendant console windows.'
+Assert ((Get-Content -Raw $appServerPtyHost) -match 'useConptyDll: true') 'The app-server host is not attached to a private ConPTY.'
 Assert ((Get-Content -Raw $appServerHost) -match 'prepareHiddenCodexEnvironment') 'The shared app-server can still expose Codex helper consoles.'
 Assert ((Get-Content -Raw $windowsShellShim) -match 'CODEX_CODE_MODE_HOST_PATH') 'The code-mode host is not routed through the hidden process shim.'
 Assert ((Get-Content -Raw $hiddenProcessSource) -match 'CREATE_NO_WINDOW') 'The Windows helper shim does not suppress console allocation.'
@@ -296,7 +302,19 @@ Assert ($officeScript -match '(?m)^\s*IdentitiesOnly yes') 'Office SSH is not us
 Assert ($officeScript -notmatch 'office-wezterm\.lua') 'Office setup still creates a WezTerm workspace configuration.'
 Assert ($mainScript -notmatch 'wez\.wezterm') 'Main setup still installs WezTerm for the legacy mux.'
 Assert ($officeScript -notmatch 'wez\.wezterm') 'Office setup still installs WezTerm for the legacy mux.'
-Assert ($mainScript -match 'Install-XcodeCodexEntrypoint') 'Main setup does not preserve the codex command through the managed-session entrypoint.'
+Assert ($mainScript -match 'Install-XcodeManagedCodexProfileEntrypoint') 'Main setup does not preserve the codex command through the managed-session entrypoint.'
+Assert ((Get-Content -Raw -LiteralPath $dispatcher) -match 'Install-XcodeManagedCodexProfileEntrypoint') 'The first post-update Codex launch does not repair an older managed profile entrypoint.'
+Assert ((Get-Content -Raw -LiteralPath $dispatcher) -match 'HadLegacyZeroArgumentBug') 'The dispatcher does not neutralize the one-time legacy bogus zero-argument value.'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'codex-profile-entrypoint-harness.ps1') -RepositoryRoot $root
+Assert ($LASTEXITCODE -eq 0) 'The managed codex PowerShell profile entrypoint is not stable across setup and zero-argument startup.'
+$headlessTerminalFiles = @(
+    (Join-Path $root 'lib\session-runner.js'),
+    (Join-Path $root 'lib\office-terminal-surface.js'),
+    (Join-Path $root 'lib\terminal-output-coalescer.js')
+)
+foreach ($headlessTerminalFile in $headlessTerminalFiles) {
+    Assert ((Get-Content -Raw -LiteralPath $headlessTerminalFile) -match "logLevel:\s*'off'") "Headless xterm diagnostics can still leak from $headlessTerminalFile."
+}
 Assert ($officeScript -match 'Remove-XcodeMainRoleResidue') 'Office setup does not remove stale local main-PC role residue.'
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $roleHarness -RepositoryRoot $root
 Assert ($LASTEXITCODE -eq 0) 'Office role precedence failed when stale main-PC state was present.'

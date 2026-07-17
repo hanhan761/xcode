@@ -64,6 +64,10 @@ async function main() {
     assert.equal(first.url, second.url, 'Concurrent managed sessions did not receive one shared app-server URL.');
     assert.equal(first.processId, second.processId, 'Concurrent managed sessions started more than one app-server process.');
     assert.equal(isAlive(first.processId), true, 'The acquired app-server process is not alive.');
+    const state = JSON.parse(fs.readFileSync(path.join(hostRoot, 'host.json'), 'utf8'));
+    assert.equal(state.schemaVersion, 2, 'The shared host did not publish its private-pseudoconsole ownership.');
+    assert.equal(isAlive(state.pseudoconsoleHostProcessId), true, 'The private app-server pseudoconsole host is not alive.');
+    assert.notEqual(state.pseudoconsoleHostProcessId, state.processId, 'The app-server is not owned by a separate pseudoconsole host.');
     await first.release();
     assert.equal(isAlive(second.processId), true, 'Releasing one session stopped an app-server still leased by another session.');
     await second.release();

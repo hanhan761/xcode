@@ -27,6 +27,19 @@ async function main() {
   assert.doesNotMatch(writes[0], /working-(?:[0-9]|[1-3][0-9]|4[01])(?![0-9])/, 'An intermediate spinner frame still reached Windows Terminal.');
   assert.match(writes[0], /working-42/, 'The final native Codex screen state was not rendered.');
 
+  const parserDiagnostics = [];
+  const originalConsoleError = console.error;
+  console.error = (...args) => parserDiagnostics.push(args);
+  try {
+    await coalescer.write('\x1b[1Ç解析后继续');
+    await coalescer.flush();
+  }
+  finally {
+    console.error = originalConsoleError;
+  }
+  assert.equal(parserDiagnostics.length, 0, 'A malformed Codex ANSI sequence leaked xterm parser diagnostics into the main terminal.');
+  assert.match(writes.join(''), /解析后继续/, 'The coalescer lost valid text after a malformed ANSI sequence.');
+
   coalescer.resize(48, 10);
   const border = `╔${'═'.repeat(46)}╗`;
   await coalescer.write(`\x1b[4;1H\x1b[31;1mfinal-frame\x1b[0m\x1b[10;1H${border}`);

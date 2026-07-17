@@ -94,6 +94,21 @@ function visibleWindowsOwnedBy(rootProcessId, result) {
   });
 }
 
+function visibleShowEventsOwnedBy(rootProcessId, result) {
+  const processes = result.startedProcesses || [];
+  const descendants = descendantProcessIds(rootProcessId, processes);
+  return (result.windowEvents || []).filter((event) => {
+    if (event.eventName !== 'show' || event.visible !== true) { return false; }
+    if (descendants.has(event.processId)) { return true; }
+    if (!/^WindowsTerminal$/i.test(event.processName || '')) { return false; }
+    const associated = associatedConsoleProcess({
+      title: event.title,
+      observedAt: event.observedAt,
+    }, processes);
+    return associated ? descendants.has(associated.processId) : false;
+  });
+}
+
 async function main() {
   if (!RUN) {
     console.log('LIVE_HIDDEN_APP_SERVER_WINDOW=SKIPPED (set XCODE_RUN_LIVE_WINDOW_PROOF=1)');
@@ -154,11 +169,19 @@ async function main() {
     await probeCompleted;
     const result = JSON.parse(fs.readFileSync(probeResult, 'utf8'));
     const scopedVisibleWindows = visibleWindowsOwnedBy(host.processId, result);
+    const scopedVisibleShowEvents = visibleShowEventsOwnedBy(host.processId, result);
     assert.deepEqual(scopedVisibleWindows, [],
       `The real Codex app-server created visible tool windows: ${JSON.stringify(scopedVisibleWindows)}\n` +
       `All unrelated visible windows: ${JSON.stringify(result.visibleChildWindows)}\n` +
       `Processes started during the turn: ${JSON.stringify(result.startedProcesses)}`);
-    console.log(`LIVE_HIDDEN_APP_SERVER_WINDOW=PASS unrelated_windows=${result.visibleChildWindows.length}`);
+    assert.deepEqual(scopedVisibleShowEvents, [],
+      `The real Codex app-server briefly showed a tool window: ${JSON.stringify(scopedVisibleShowEvents)}\n` +
+      `All window lifecycle events: ${JSON.stringify(result.windowEvents)}\n` +
+      `Processes started during the turn: ${JSON.stringify(result.startedProcesses)}`);
+    console.log(
+      `LIVE_HIDDEN_APP_SERVER_WINDOW=PASS unrelated_windows=${result.visibleChildWindows.length} ` +
+      `unrelated_show_events=${(result.windowEvents || []).filter((event) => event.eventName === 'show').length}`,
+    );
   }
   finally {
     if (threadId && client) {

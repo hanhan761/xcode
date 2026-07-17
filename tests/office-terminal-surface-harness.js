@@ -7,8 +7,21 @@ const { OfficeTerminalSurface } = require('../lib/office-terminal-surface');
 async function main() {
   const surface = new OfficeTerminalSurface({ remoteCols: 24, remoteRows: 5 });
   try {
-    await surface.write('\x1b[2J\x1b[HPrimary Codex\x1b[2;1Hfirst response');
+    const parserDiagnostics = [];
+    const originalConsoleError = console.error;
+    console.error = (...args) => parserDiagnostics.push(args);
+    try {
+      await surface.write('\x1b[1Ç后续输出\r\n');
+    }
+    finally {
+      console.error = originalConsoleError;
+    }
+    assert.equal(parserDiagnostics.length, 0, 'A malformed remote ANSI sequence leaked xterm parser diagnostics into the office UI.');
     let viewport = surface.getViewport({ cols: 24, rows: 5 });
+    assert.equal(viewport.join('\n').includes('后续输出'), true, 'Valid text after a malformed ANSI sequence was lost.');
+
+    await surface.write('\x1b[2J\x1b[HPrimary Codex\x1b[2;1Hfirst response');
+    viewport = surface.getViewport({ cols: 24, rows: 5 });
     assert.equal(viewport[0], 'Primary Codex');
     assert.equal(viewport[1], 'first response');
     assert.equal(viewport.join('\n').includes('\x1b'), false, 'ANSI controls leaked into the office renderer.');
@@ -38,8 +51,21 @@ async function main() {
       viewport = scrollback.getViewport({ cols: 24, rows: 5 });
       assert.equal(viewport[0], 'history-1', 'PageUp did not expose the earliest scrollback line.');
       assert.equal(scrollback.isFollowingLiveOutput(), false, 'PageUp did not leave live-follow mode.');
+      const historicalTop = viewport[0];
+      await scrollback.write('history-9\r\nhistory-10\r\n');
+      viewport = scrollback.getViewport({ cols: 24, rows: 5 });
+      assert.equal(viewport[0], historicalTop,
+        'New live output pulled the office reader away from the history they were reviewing.');
+      assert.equal(scrollback.isFollowingLiveOutput(), false,
+        'New live output silently re-enabled live-follow mode while reviewing history.');
+      scrollback.resizeRemote(48, 8);
+      viewport = scrollback.getViewport({ cols: 48, rows: 8 });
+      assert.equal(viewport.includes(historicalTop), true,
+        'A terminal resize lost the history region being reviewed.');
       scrollback.scrollToBottom();
       assert.equal(scrollback.isFollowingLiveOutput(), true, 'End did not return the office surface to live output.');
+      viewport = scrollback.getViewport({ cols: 48, rows: 8 });
+      assert.equal(viewport.includes('history-10'), true, 'End did not reveal the newest live output.');
     }
     finally { scrollback.dispose(); }
     console.log('OFFICE_TERMINAL_SURFACE=PASS');

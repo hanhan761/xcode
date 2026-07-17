@@ -145,13 +145,13 @@ async function connectSession(sshConfig, session) {
     status = `Ready — ${detail}`;
   }
 
-  function updateHistoryStatus() {
+  function updateHistoryStatus(liveDetail) {
     reviewingHistory = Boolean(surface && !surface.isFollowingLiveOutput());
     if (reviewingHistory) {
       status = 'Reviewing earlier terminal output — PgDn or End returns to live';
     }
     else {
-      setReadyStatus();
+      setReadyStatus(liveDetail);
     }
   }
 
@@ -249,7 +249,7 @@ async function connectSession(sshConfig, session) {
       }
       await surface.write(data);
       if (!surface.isFollowingLiveOutput()) {
-        reviewingHistory = true;
+        updateHistoryStatus();
       }
       queueRender();
     }).catch((error) => finish(error));
@@ -285,8 +285,7 @@ async function connectSession(sshConfig, session) {
       return;
     }
     if (frame.type === 'delivered') {
-      reviewingHistory = false;
-      setReadyStatus('message is in the shared Codex conversation');
+      updateHistoryStatus('message is in the shared Codex conversation');
       queueRender();
       return;
     }
@@ -295,7 +294,7 @@ async function connectSession(sshConfig, session) {
         throw new Error('The main PC sent malformed terminal dimensions.');
       }
       surface?.resizeRemote(frame.cols, frame.rows);
-      if (surface) { reviewingHistory = !surface.isFollowingLiveOutput(); }
+      if (surface) { updateHistoryStatus(); }
       queueRender();
       return;
     }

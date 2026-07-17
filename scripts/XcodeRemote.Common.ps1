@@ -241,6 +241,89 @@ function Write-XcodeUtf8File {
     }
 }
 
+function Update-XcodeManagedCodexProfileContent {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Content,
+        [switch]$InstallEntrypoint
+    )
+
+    $startMarker = '# >>> xcode managed codex >>>'
+    $endMarker = '# <<< xcode managed codex <<<'
+    $depth = 0
+    $unmanagedLines = [Collections.Generic.List[string]]::new()
+    foreach ($line in @($Content -split "\r?\n")) {
+        $trimmed = $line.Trim()
+        if ($trimmed -eq $startMarker) {
+            $depth++
+            continue
+        }
+        if ($trimmed -eq $endMarker) {
+            if ($depth -gt 0) { $depth-- }
+            continue
+        }
+        if ($depth -eq 0) { $unmanagedLines.Add($line) }
+    }
+
+    $unmanagedContent = ($unmanagedLines -join "`r`n").TrimEnd()
+    if (-not $InstallEntrypoint) { return $unmanagedContent }
+
+    $block = @'
+# >>> xcode managed codex >>>
+function global:codex {
+    [CmdletBinding()]
+    param([Parameter(ValueFromRemainingArguments = $true)][object[]]$XcodeCodexArguments)
+    $xcodeLauncher = Get-Command xcode.cmd -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $xcodeLauncher) { $xcodeLauncher = Get-Command xcode -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1 }
+    if (-not $xcodeLauncher) { throw 'xcode is unavailable. Reinstall it with npm, then open a new PowerShell window.' }
+    $arguments = @(
+        $XcodeCodexArguments |
+            Where-Object { $null -ne $_ -and ([string]$_).Length -gt 0 } |
+            ForEach-Object { [string]$_ }
+    )
+    if ($arguments.Count -eq 0) {
+        & $xcodeLauncher.Source session run
+    }
+    else {
+        & $xcodeLauncher.Source session run @arguments
+    }
+}
+# <<< xcode managed codex <<<
+'@
+    if ($unmanagedContent) { return $unmanagedContent + "`r`n`r`n" + $block + "`r`n" }
+    return $block + "`r`n"
+}
+
+function Install-XcodeManagedCodexProfileEntrypoint {
+    param([Parameter(Mandatory = $true)][string]$ProfilePath)
+
+    $existing = if (Test-Path -LiteralPath $ProfilePath -PathType Leaf) {
+        Get-Content -Raw -LiteralPath $ProfilePath
+    }
+    else { '' }
+    $hadLegacyZeroArgumentBug = $existing.Contains('@($XcodeCodexArguments | ForEach-Object { [string]$_ })')
+    $updated = Update-XcodeManagedCodexProfileContent -Content $existing -InstallEntrypoint
+    $changed = $updated -ne $existing
+    if ($changed) {
+        Write-XcodeUtf8File -Path $ProfilePath -Content $updated
+    }
+    return [pscustomobject]@{
+        Changed = $changed
+        HadLegacyZeroArgumentBug = $hadLegacyZeroArgumentBug
+    }
+}
+
+function Resolve-XcodeManagedCodexArguments {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Arguments,
+        [switch]$HadLegacyZeroArgumentBug
+    )
+
+    if ($HadLegacyZeroArgumentBug -and $Arguments.Count -eq 1 -and $Arguments[0] -eq 'string') {
+        return
+    }
+    return $Arguments
+}
+
 function Backup-XcodeFile {
     param([Parameter(Mandatory = $true)][string]$Path)
 
