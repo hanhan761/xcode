@@ -17,7 +17,14 @@ function parseArgs(argv) {
 function runGateway(sshConfig, args, options = {}) {
   const ssh = process.env.XCODE_SSH_PATH || (process.env.SystemRoot ? `${process.env.SystemRoot}\\System32\\OpenSSH\\ssh.exe` : 'ssh');
   const wrapper = process.env.XCODE_SSH_WRAPPER ? ['/d', '/c', process.env.XCODE_SSH_WRAPPER] : [];
-  return spawn(ssh, [...wrapper, '-F', sshConfig, '-o', 'BatchMode=yes', 'xcode-main', 'xcode-gateway', ...args], options);
+  // `attach` is deliberately long-lived: it carries both the live terminal
+  // mirror and complete office messages. Windows OpenSSH/Tailscale can drop a
+  // completely idle stream in a few minutes, so keep this application channel
+  // alive even when Codex has not emitted output yet.
+  const keepAlive = args[0] === 'attach'
+    ? ['-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3', '-o', 'TCPKeepAlive=yes']
+    : [];
+  return spawn(ssh, [...wrapper, '-F', sshConfig, '-o', 'BatchMode=yes', ...keepAlive, 'xcode-main', 'xcode-gateway', ...args], options);
 }
 
 function collectOutput(child) {

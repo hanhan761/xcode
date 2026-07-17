@@ -7,6 +7,8 @@ const os = require('node:os');
 const path = require('node:path');
 const pty = require('node-pty');
 
+const packageRoot = path.resolve(process.env.XCODE_PACKAGE_ROOT || path.join(__dirname, '..'));
+
 function waitFor(predicate, timeoutMs, description) {
   return new Promise((resolve, reject) => {
     const deadline = Date.now() + timeoutMs;
@@ -28,14 +30,27 @@ async function main() {
   const remoteBytes = '\x1b]2;REMOTE-LEAK\x07\x1b[2J\x1b[HMain Codex UI\x1b[2;1HLive output';
   const encodedRemote = Buffer.from(remoteBytes, 'utf8').toString('base64');
   const fakeSsh = path.join(fixtureRoot, 'ssh.cmd');
+  const sshArgsLog = path.join(fixtureRoot, 'ssh-args.log');
   fs.writeFileSync(fakeSsh, [
     '@echo off',
     'setlocal EnableDelayedExpansion',
-    'if "%8"=="list" (',
+    'if not "%XCODE_SSH_ARGS_LOG%"=="" echo %*>>"%XCODE_SSH_ARGS_LOG%"',
+    'set "previous2="',
+    'set "previous1="',
+    'set "last="',
+    ':next_arg',
+    'if "%~1"=="" goto parsed_args',
+    'set "previous2=!previous1!"',
+    'set "previous1=!last!"',
+    'set "last=%~1"',
+    'shift',
+    'goto next_arg',
+    ':parsed_args',
+    'if "!previous1!"=="xcode-gateway" if "!last!"=="list" (',
     '  echo {"sessions":[{"sessionId":"11111111-1111-4111-8111-111111111111","cwd":"C:/main","createdAt":"2026-07-16T00:00:00.000Z"}]}',
     '  exit /b 0',
     ')',
-    'if "%8"=="attach" (',
+    'if "!previous2!"=="xcode-gateway" if "!previous1!"=="attach" (',
     `  echo {"type":"snapshot","data":"${encodedRemote}"}`,
     '  echo {"type":"attached","sessionId":"11111111-1111-4111-8111-111111111111","cols":40,"rows":8}',
     '  set /p submitted=',
@@ -48,15 +63,16 @@ async function main() {
   ].join('\r\n'), 'utf8');
 
   const node = process.execPath;
-  const client = pty.spawn(node, ['bin/session-client.js', '--ssh-config', path.join(fixtureRoot, 'config')], {
+  const client = pty.spawn(node, [path.join(packageRoot, 'bin', 'session-client.js'), '--ssh-config', path.join(fixtureRoot, 'config')], {
     name: 'xterm-256color',
     cols: 80,
     rows: 16,
-    cwd: path.join(__dirname, '..'),
+    cwd: packageRoot,
     env: {
       ...process.env,
       XCODE_SSH_PATH: process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe',
       XCODE_SSH_WRAPPER: fakeSsh,
+      XCODE_SSH_ARGS_LOG: sshArgsLog,
     },
     useConptyDll: true,
   });
@@ -90,7 +106,11 @@ async function main() {
     assert.match(output, /\x1b\[\?1049h/, 'The office UI did not remain in the current terminal window.');
     assert.match(output, /\x1b\[\?1049l/, 'The office UI did not restore the calling PowerShell window.');
     assert.equal(output.includes('REMOTE-LEAK'), false, 'A remote terminal control sequence leaked into the office UI.');
-    console.log('OFFICE_CLIENT_SINGLE_WINDOW=PASS');
+    const sshArgs = fs.readFileSync(sshArgsLog, 'utf8');
+    assert.match(sshArgs, /ServerAliveInterval=30/, 'The persistent office attachment has no SSH application keepalive interval.');
+    assert.match(sshArgs, /ServerAliveCountMax=3/, 'The persistent office attachment has no bounded SSH keepalive retry count.');
+    assert.match(sshArgs, /TCPKeepAlive=yes/, 'The persistent office attachment has no TCP keepalive enabled.');
+    console.log(`OFFICE_CLIENT_SINGLE_WINDOW=PASS package=${packageRoot}`);
   }
   finally {
     client.kill();

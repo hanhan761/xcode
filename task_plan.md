@@ -100,7 +100,9 @@ Phase 6: publish the single-window repair and complete real two-device acceptanc
 - [x] Pack the exact npm artifact into an isolated temporary prefix and rerun the readiness, two-machine and native-Codex probes against that installed artifact (`CODEX_READINESS_GATE=PASS`, `TWO_MACHINE_COLLABORATION_E2E=PASS`, `LIVE_CODEX_REMOTE_INPUT=PASS`).
 - [ ] Update both devices after closing active managed runners on the main PC.
 - [ ] Confirm on the paired office laptop that a message visibly reaches `Delivered` and appears in the existing main Codex conversation.
-- **Status:** source and packed-artifact release checks are complete; real-device acceptance still requires updating both devices after the main PC's old managed runners are closed.
+- [ ] Reject or clearly label a managed Codex process whose terminal has reached its final `Goal achieved` state but whose process and pipe remain alive.
+- [x] Keep the office SSH attachment alive across an otherwise idle main Codex period, then verify that later output and input remain on the same channel (SSH keepalive contract is covered by the office-client and packaged two-machine regressions).
+- **Status:** keepalive repair is implemented and release-artifact verified; deploy it on the office laptop, where the persistent SSH client runs, then perform a real idle-period acceptance check.
 
 ## Design decisions
 
