@@ -67,7 +67,7 @@ xcode
 
 若原生 Codex 仍意外退出，主力机可查看 `%LOCALAPPDATA%\XcodeRemote\logs\managed-codex.log`。该文件只记录启动阶段、`threadId`、退出码和错误摘要，不记录对话内容。
 
-原生 Codex 的高频光标/加载动画会先应用到内存终端，再将最终屏幕状态以最多约 13 次/秒绘制到主力机 PowerShell；中间擦行帧不会抵达 Windows Terminal，办公本仍接收完整会话事件。
+原生 Codex 的光标、加载和 Working 动画仍会动态更新：每个完整屏幕状态先在内存终端中算好，再以最多约 13 帧/秒原子提交给 Windows Terminal。终端只显示已经完成的帧，不会露出擦行、半幅边框或逐行重绘过程；办公本仍接收完整会话事件。
 
 ## 安全边界
 

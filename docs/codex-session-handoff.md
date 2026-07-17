@@ -105,8 +105,10 @@ flowchart LR
 - **Terminal output coalescer** applies the native byte stream to an in-memory
   terminal and paints only changed final-state rows into the outer main
   PowerShell. It preserves colors, wide cells, cursor state and resize while
-  dropping intermediate erase animations; the gateway remains on the
-  uncoalesced session event stream.
+  dropping intermediate erase animations. Every completed dynamic frame is
+  bracketed with DECSET 2026 synchronized output so Windows Terminal presents
+  it atomically instead of exposing a partial repaint; the gateway remains on
+  the uncoalesced session event stream.
 - **SessionBroker** exposes session metadata, observation and message-submit
   operations to the local gateway. It is the only module allowed to translate
   a device grant into a session attachment.
