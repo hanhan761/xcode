@@ -103,6 +103,8 @@ async function connectSession(sshConfig, session) {
   let surface = null;
   let typed = '';
   let status = 'Connecting to the main Codex session…';
+  let reviewingHistory = false;
+  let pendingInput = '';
   let enteredUi = false;
   let inputEnabled = false;
   let renderQueued = false;
@@ -139,6 +141,42 @@ async function connectSession(sshConfig, session) {
     writeFrame({ type: 'resize', cols, rows });
   }
 
+  function setReadyStatus(detail = 'type below; Enter sends to the main Codex conversation') {
+    status = `Ready — ${detail}`;
+  }
+
+  function updateHistoryStatus() {
+    reviewingHistory = Boolean(surface && !surface.isFollowingLiveOutput());
+    if (reviewingHistory) {
+      status = 'Reviewing earlier terminal output — PgDn or End returns to live';
+    }
+    else {
+      setReadyStatus();
+    }
+  }
+
+  function reviewPages(pages) {
+    if (!surface) { return; }
+    surface.scrollPages(pages);
+    updateHistoryStatus();
+    queueRender();
+  }
+
+  function reviewLines(lines) {
+    if (!surface) { return; }
+    surface.scrollLines(lines);
+    updateHistoryStatus();
+    queueRender();
+  }
+
+  function reviewBoundary(boundary) {
+    if (!surface) { return; }
+    if (boundary === 'top') { surface.scrollToTop(); }
+    else { surface.scrollToBottom(); }
+    updateHistoryStatus();
+    queueRender();
+  }
+
   function onTerminalResize() {
     synchronizeTerminalSize();
     queueRender();
@@ -154,16 +192,17 @@ async function connectSession(sshConfig, session) {
     for (let index = 0; index < mirrorRows; index += 1) {
       output += `\x1b[${index + 1};1H\x1b[2K${fitLeft(viewport[index] || '', cols)}`;
     }
-    output += `\x1b[${mirrorRows + 1};1H\x1b[2K\x1b[7m ${fitLeft(`xcode · ${status} · Ctrl+C disconnects`, Math.max(1, cols - 2))} \x1b[0m`;
+    const controls = reviewingHistory ? 'PgUp/PgDn review · End follows live' : 'PgUp/PgDn review · Ctrl+C disconnects';
+    output += `\x1b[${mirrorRows + 1};1H\x1b[2K\x1b[7m ${fitLeft(`xcode · ${status} · ${controls}`, Math.max(1, cols - 2))} \x1b[0m`;
     output += `\x1b[${mirrorRows + 2};1H\x1b[2K${fitRight(`› ${typed}`, Math.max(1, cols - 1))}▌`;
-    output += `\x1b[${mirrorRows + 3};1H\x1b[2K${fitLeft('Enter sends a complete message to this Codex conversation', cols)}`;
+    output += `\x1b[${mirrorRows + 3};1H\x1b[2K${fitLeft('PgUp/PgDn or wheel reviews history · Enter sends to this Codex conversation', cols)}`;
     process.stdout.write(output);
   }
 
   function enterUi() {
     if (enteredUi) { return; }
     enteredUi = true;
-    process.stdout.write('\x1b[?1049h\x1b[H\x1b[2J\x1b[?25l');
+    process.stdout.write('\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[H\x1b[2J\x1b[?25l');
     queueRender();
   }
 
@@ -177,7 +216,7 @@ async function connectSession(sshConfig, session) {
     process.stdout.off('resize', onTerminalResize);
     if (enteredUi) {
       enteredUi = false;
-      process.stdout.write('\x1b[?25h\x1b[?1049l');
+      process.stdout.write('\x1b[?1000l\x1b[?1006l\x1b[?25h\x1b[?1049l');
     }
     if (surface) {
       surface.dispose();
@@ -209,6 +248,9 @@ async function connectSession(sshConfig, session) {
         return;
       }
       await surface.write(data);
+      if (!surface.isFollowingLiveOutput()) {
+        reviewingHistory = true;
+      }
       queueRender();
     }).catch((error) => finish(error));
   }
@@ -224,7 +266,7 @@ async function connectSession(sshConfig, session) {
     if (frame.type === 'attached') {
       if (!surface) {
         surface = new OfficeTerminalSurface({ remoteCols: frame.cols, remoteRows: frame.rows });
-        status = 'Connected — type below; Enter sends to the main Codex conversation';
+        setReadyStatus();
         enterUi();
         beginInput();
         synchronizeTerminalSize();
@@ -238,12 +280,13 @@ async function connectSession(sshConfig, session) {
       return;
     }
     if (frame.type === 'queued') {
-      status = 'Submitting to the shared Codex conversation…';
+      status = 'Accepted by the main PC — waiting for Codex to accept the turn';
       queueRender();
       return;
     }
     if (frame.type === 'delivered') {
-      status = 'Submitted to the shared Codex conversation — watch the mirrored response';
+      reviewingHistory = false;
+      setReadyStatus('message is in the shared Codex conversation');
       queueRender();
       return;
     }
@@ -252,6 +295,7 @@ async function connectSession(sshConfig, session) {
         throw new Error('The main PC sent malformed terminal dimensions.');
       }
       surface?.resizeRemote(frame.cols, frame.rows);
+      if (surface) { reviewingHistory = !surface.isFollowingLiveOutput(); }
       queueRender();
       return;
     }
@@ -263,8 +307,7 @@ async function connectSession(sshConfig, session) {
     throw new Error('The main PC sent an unknown xcode session frame.');
   }
 
-  function onInput(data) {
-    for (const character of data) {
+  function handleTextCharacter(character) {
       if (character === '\u0003' || character === '\u0004') {
         status = 'Disconnecting…';
         queueRender();
@@ -283,17 +326,62 @@ async function connectSession(sshConfig, session) {
           writeFrame({ type: 'message', messageId: crypto.randomUUID(), text: message });
         }
         queueRender();
-        continue;
+        return;
       }
       if (character === '\u0008' || character === '\u007f') {
         typed = typed.slice(0, -1);
         queueRender();
-        continue;
+        return;
       }
       if (character >= ' ') {
         typed += character;
         queueRender();
       }
+  }
+
+  function onInput(data) {
+    pendingInput += data;
+    const navigation = new Map([
+      ['\x1b[5~', () => reviewPages(-1)],
+      ['\x1b[6~', () => reviewPages(1)],
+      ['\x1b[H', () => reviewBoundary('top')],
+      ['\x1bOH', () => reviewBoundary('top')],
+      ['\x1b[F', () => reviewBoundary('bottom')],
+      ['\x1bOF', () => reviewBoundary('bottom')],
+    ]);
+    while (pendingInput) {
+      if (pendingInput[0] !== '\x1b') {
+        const character = pendingInput[0];
+        pendingInput = pendingInput.slice(1);
+        handleTextCharacter(character);
+        continue;
+      }
+
+      const mouse = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])/.exec(pendingInput);
+      if (mouse) {
+        pendingInput = pendingInput.slice(mouse[0].length);
+        const button = Number.parseInt(mouse[1], 10);
+        if (mouse[4] === 'M' && button === 64) { reviewLines(-3); }
+        if (mouse[4] === 'M' && button === 65) { reviewLines(3); }
+        continue;
+      }
+      if (pendingInput.startsWith('\x1b[<')) { return; }
+
+      const matchingNavigation = [...navigation.keys()].find((sequence) => pendingInput.startsWith(sequence));
+      if (matchingNavigation) {
+        pendingInput = pendingInput.slice(matchingNavigation.length);
+        navigation.get(matchingNavigation)();
+        continue;
+      }
+      if ([...navigation.keys()].some((sequence) => sequence.startsWith(pendingInput))) { return; }
+
+      const ansiKey = /^\x1b\[[0-?]*[ -/]*[@-~]/.exec(pendingInput) || /^\x1bO./.exec(pendingInput);
+      if (ansiKey) {
+        pendingInput = pendingInput.slice(ansiKey[0].length);
+        continue;
+      }
+      if (pendingInput.length === 1) { return; }
+      pendingInput = pendingInput.slice(1);
     }
   }
 

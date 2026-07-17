@@ -88,7 +88,7 @@ async function main() {
   let sent = false;
   client.onData((data) => {
     output += data;
-    if (!sent && output.includes('Connected')) {
+    if (!sent && output.includes('Ready — type below')) {
       sent = true;
       client.resize(160, 40);
       setTimeout(() => client.write('hello from office\r'), 100);
@@ -97,7 +97,7 @@ async function main() {
 
   try {
     try {
-      await waitFor(() => output.includes('Submitted to the shared Codex conversation'), 5_000, 'the office client shared-thread acknowledgement');
+      await waitFor(() => output.includes('Ready — message is in the shared Codex conversation'), 5_000, 'the office client to settle after main-PC delivery');
     }
     catch (error) {
       error.message += ` Captured terminal: ${JSON.stringify(output)}`;

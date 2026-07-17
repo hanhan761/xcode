@@ -117,13 +117,13 @@ async function main() {
     let sent = false;
     office.onData((data) => {
       officeOutput += data;
-      if (!sent && officeOutput.includes('Connected')) {
+      if (!sent && officeOutput.includes('Ready — type below')) {
         sent = true;
         office.write(`Reply with exactly: ${marker}. Do not use tools.\r`);
       }
     });
 
-    await waitFor(() => officeOutput.includes('Submitted to the shared Codex conversation'), 15_000, 'the office semantic acknowledgement through the real gateway');
+    await waitFor(() => officeOutput.includes('Ready — message is in the shared Codex conversation'), 15_000, 'the office client to settle after semantic delivery');
     await waitFor(() => mainOutput.includes(marker), 90_000, 'the office turn to render in the main native Codex TUI');
     await waitFor(() => officeOutput.includes(marker), 30_000, 'the same native-Codex reply to render in the office mirror');
     assert.equal(sent, true, 'The office client never accepted its local message.');

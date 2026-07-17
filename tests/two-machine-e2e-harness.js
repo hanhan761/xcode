@@ -107,7 +107,7 @@ async function main() {
     });
     office.onData((data) => {
       officeOutput += data;
-      if (!sentOfficeMessage && officeOutput.includes('Connected')) {
+      if (!sentOfficeMessage && officeOutput.includes('Ready — type below')) {
         sentOfficeMessage = true;
         requestedFullScreen = true;
         office.resize(160, 40);
@@ -115,7 +115,7 @@ async function main() {
       }
     });
 
-    await waitFor(() => officeOutput.includes('Submitted to the shared Codex conversation'), 8_000, 'the office shared-thread acknowledgement through the real gateway');
+    await waitFor(() => officeOutput.includes('Ready — message is in the shared Codex conversation'), 8_000, 'the office client to settle after main-PC delivery');
     await waitFor(() => mainOutput.join('').includes('TUI_WIDTH:160'), 8_000, 'the office full-screen width to resize the main PTY');
     await waitFor(() => mainOutput.join('').includes('TUI_RECEIVED:office-through-real-gateway'), 8_000, 'the office message to reach the same main-PC conversation');
     assert.equal(sentOfficeMessage, true, 'The office terminal never accepted its local message.');

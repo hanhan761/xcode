@@ -29,6 +29,19 @@ async function main() {
     viewport = surface.getViewport({ cols: 48, rows: 10 });
     assert.equal(viewport[0], horizontalBorder, 'A resized terminal did not render its complete top border.');
     assert.equal(viewport[9], horizontalBorder, 'A resized terminal did not render its complete bottom border.');
+
+    const scrollback = new OfficeTerminalSurface({ remoteCols: 24, remoteRows: 5 });
+    try {
+      await scrollback.write(Array.from({ length: 8 }, (_, index) => `history-${index + 1}\r\n`).join(''));
+      assert.equal(scrollback.isFollowingLiveOutput(), true, 'A live terminal should initially follow its newest output.');
+      scrollback.scrollPages(-1);
+      viewport = scrollback.getViewport({ cols: 24, rows: 5 });
+      assert.equal(viewport[0], 'history-1', 'PageUp did not expose the earliest scrollback line.');
+      assert.equal(scrollback.isFollowingLiveOutput(), false, 'PageUp did not leave live-follow mode.');
+      scrollback.scrollToBottom();
+      assert.equal(scrollback.isFollowingLiveOutput(), true, 'End did not return the office surface to live output.');
+    }
+    finally { scrollback.dispose(); }
     console.log('OFFICE_TERMINAL_SURFACE=PASS');
   }
   finally {

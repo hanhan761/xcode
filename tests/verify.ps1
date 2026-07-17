@@ -229,6 +229,9 @@ Assert ((Get-Content -Raw $sessionClient) -match "'message'") 'The office client
 Assert ((Get-Content -Raw $sessionClient) -match "'delivered'") 'The office client does not confirm message delivery to the main terminal.'
 Assert ((Get-Content -Raw $sessionClient) -match 'OfficeTerminalSurface') 'The office client still writes raw main-terminal bytes into PowerShell.'
 Assert ((Get-Content -Raw $sessionClient) -match 'synchronizeTerminalSize') 'The office client does not synchronize terminal dimensions with the main PTY.'
+Assert ((Get-Content -Raw $sessionClient) -match 'scrollPages') 'The office client cannot review shared terminal history with terminal navigation keys.'
+Assert ((Get-Content -Raw $sessionClient) -match '\?1006h') 'The office client does not enable mouse-wheel history review.'
+Assert ((Get-Content -Raw $appServerSession) -match "'--no-alt-screen'") 'The managed native Codex TUI does not retain terminal scrollback for the office mirror.'
 Assert ((Get-Content -Raw $sessionClient) -match '\?1049h') 'The office client does not stay inside the calling terminal window.'
 $nodeHelpText = (& node.exe $nodeLauncher help | Out-String)
 Assert ($LASTEXITCODE -eq 0 -and $nodeHelpText -match 'xcode office') 'The npm xcode binary cannot launch the dispatcher.'
