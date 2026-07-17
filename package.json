@@ -1,6 +1,6 @@
 {
   "name": "xcode-remote",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "Collaborate with managed Codex sessions from a paired Windows laptop",
   "bin": {
     "xcode": "bin/xcode.js"

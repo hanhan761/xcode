@@ -40,7 +40,8 @@ async function main() {
   }
   const codex = findNativeCodex();
   const initialSize = terminalDimensions();
-  const session = await startSharedAppServerSession({ file: codex, args: process.argv.slice(2), cwd: process.cwd(), ...initialSize });
+  const stateRoot = process.env.XCODE_STATE_ROOT || undefined;
+  const session = await startSharedAppServerSession({ file: codex, args: process.argv.slice(2), cwd: process.cwd(), stateRoot, ...initialSize });
   session.onOutput((data) => process.stdout.write(data));
   const resize = () => {
     try {
