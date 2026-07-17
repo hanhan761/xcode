@@ -115,12 +115,13 @@ async function main() {
     process.exitCode = 1;
     session.stop();
   });
-  const terminalOutput = createTerminalOutputCoalescer((data) => output.write(data));
+  const terminalOutput = createTerminalOutputCoalescer((data) => output.write(data), initialSize);
   session.onOutput((data) => terminalOutput.write(data));
   const resize = () => {
     try {
       const dimensions = terminalDimensions();
       session.resize(dimensions.cols, dimensions.rows);
+      terminalOutput.resize(dimensions.cols, dimensions.rows);
     }
     catch { /* The terminal is closing or the managed TUI already exited. */ }
   };
@@ -131,7 +132,7 @@ async function main() {
   process.stdin.on('data', (data) => session.submitLocal(data));
   const result = await session.completed;
   process.stdout.off('resize', resize);
-  terminalOutput.close();
+  await terminalOutput.close();
   output.close();
   restoreTerminal(true);
   appendLifecycleLog('stopped', { sessionId: session.sessionId, threadId: session.threadId, exitCode: result.exitCode, signal: result.signal });
