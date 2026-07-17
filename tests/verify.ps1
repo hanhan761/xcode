@@ -209,6 +209,7 @@ Assert ((Get-Content -Raw $managedRunner) -match 'startSharedAppServerSession') 
 Assert ((Get-Content -Raw $appServerSession) -match "'app-server', '--listen'") 'The shared-session authority does not start a loopback Codex app-server.'
 Assert ((Get-Content -Raw $appServerSession) -match "'turn/start'") 'The shared-session authority does not submit office messages as Codex turns.'
 Assert ((Get-Content -Raw $appServerSession) -match "'--remote'") 'The main Codex TUI is not resumed against the shared app-server.'
+Assert ((Get-Content -Raw $appServerSession) -match "params: \{ threadId: args\[1\] \}") 'An exact Codex resume can still overwrite the stored thread workspace.'
 Assert ((Get-Content -Raw $sessionRunner) -match 'node-pty') 'The managed session runner does not use a private pseudoterminal.'
 Assert ((Get-Content -Raw $sessionRunner) -match 'xcode-session-') 'The managed session runner does not create a scoped session pipe.'
 Assert ((Get-Content -Raw $sessionRunner) -match 'localEscapeState') 'The input arbiter does not distinguish terminal controls from local draft text.'
