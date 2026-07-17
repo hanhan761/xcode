@@ -59,7 +59,7 @@ other processes. Its small interface is:
 create(codexArgs, cwd) -> Session
 resume(threadId, codexArgs, cwd) -> Session
 attach(deviceGrant) -> Readable session view
-submitMessage(deviceGrant, message) -> Queued | Delivered
+submitMessage(deviceGrant, message) -> Queued | WrittenToTerminal
 stop(session) -> void
 ```
 
@@ -76,7 +76,11 @@ interactive terminal; the office client submits a complete message, which the
 arbiter serializes with local input and injects into the one Codex terminal.
 It never forwards two devices' individual keystrokes concurrently, because
 that could corrupt a prompt. A pending office message is visible locally and
-is delivered when the terminal can accept the next input. Terminal controls
+is written only when the terminal can accept the next input. A terminal write
+is deliberately not claimed to be a completed Codex turn; the mirrored Codex
+output remains the observable response. Codex safety prompts, including the
+directory-trust prompt, keep remote messages queued until the main PC clears
+them locally. Terminal controls
 such as arrows, history navigation, backspace and cancellation are not local
 draft text and must never indefinitely block a remote message.
 

@@ -101,7 +101,7 @@ async function main() {
       }
     });
 
-    await waitFor(() => officeOutput.includes('Delivered to the main Codex terminal'), 8_000, 'the office delivery acknowledgement through the real gateway');
+    await waitFor(() => officeOutput.includes('Written to the main Codex terminal'), 8_000, 'the office terminal-write acknowledgement through the real gateway');
     await waitFor(() => mainOutput.join('').includes('TUI_RECEIVED:office-through-real-gateway'), 8_000, 'the office message to reach the same main-PC conversation');
     assert.equal(sentOfficeMessage, true, 'The office terminal never accepted its local message.');
     assert.match(officeOutput, /Codex-like full-screen conversation/, 'The office did not render the main full-screen terminal.');

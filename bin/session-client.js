@@ -207,12 +207,12 @@ async function connectSession(sshConfig, session) {
       return;
     }
     if (frame.type === 'queued') {
-      status = 'Queued on main PC — waiting for its local input to clear';
+      status = 'Queued on main PC — waiting for its Codex terminal to become ready';
       queueRender();
       return;
     }
     if (frame.type === 'delivered') {
-      status = 'Delivered to the main Codex terminal';
+      status = 'Written to the main Codex terminal — watch the mirrored response';
       queueRender();
       return;
     }

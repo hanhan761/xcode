@@ -95,6 +95,8 @@ Phase 6: publish the single-window repair and complete real two-device acceptanc
 
 - [x] Push the repaired package to GitHub (`20230a3`).
 - [x] Add a deterministic two-machine simulation that runs the office client through the real forced gateway into a managed main-PC PTY (`TWO_MACHINE_COLLABORATION_E2E=PASS`).
+- [x] Gate office messages while the managed Codex terminal displays its directory-trust safety prompt (`CODEX_READINESS_GATE=PASS`).
+- [x] Verify an isolated native Codex accepts a remote challenge and generates a distinct acknowledgement (`LIVE_CODEX_REMOTE_INPUT=PASS`).
 - [ ] Update both devices after closing active managed runners on the main PC.
 - [ ] Confirm on the paired office laptop that a message visibly reaches `Delivered` and appears in the existing main Codex conversation.
 - **Status:** in progress
