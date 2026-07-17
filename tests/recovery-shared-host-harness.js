@@ -61,6 +61,7 @@ async function main() {
   const snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
   const sessions = [...new Map((snapshot.sessions || [])
     .filter((session) => typeof session.sessionId === 'string' && session.sessionId)
+    .filter((session) => !/[\\/]xcode-(?:semantic-workspace|recovery-shared-host|live-codex-probe|app-server-proof|semantic-two-machine)-/i.test(session.cwd || ''))
     .map((session) => [session.sessionId.toLowerCase(), session])).values()];
   assert.ok(sessions.length > 1, 'The recovery snapshot must contain at least two sessions.');
 

@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { startSharedAppServerSession } = require('../lib/app-server-session');
 const { createTerminalOutputSink } = require('../lib/terminal-output-sink');
+const { createTerminalOutputCoalescer } = require('../lib/terminal-output-coalescer');
 
 function findNativeCodex() {
   const npmRoot = path.join(process.env.APPDATA || '', 'npm', 'node_modules', '@openai', 'codex', 'node_modules', '@openai');
@@ -114,7 +115,8 @@ async function main() {
     process.exitCode = 1;
     session.stop();
   });
-  session.onOutput((data) => output.write(data));
+  const terminalOutput = createTerminalOutputCoalescer((data) => output.write(data));
+  session.onOutput((data) => terminalOutput.write(data));
   const resize = () => {
     try {
       const dimensions = terminalDimensions();
@@ -129,6 +131,7 @@ async function main() {
   process.stdin.on('data', (data) => session.submitLocal(data));
   const result = await session.completed;
   process.stdout.off('resize', resize);
+  terminalOutput.close();
   output.close();
   restoreTerminal(true);
   appendLifecycleLog('stopped', { sessionId: session.sessionId, threadId: session.threadId, exitCode: result.exitCode, signal: result.signal });

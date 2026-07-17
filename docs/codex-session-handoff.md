@@ -102,6 +102,9 @@ flowchart LR
   app-server. A recovery lease joins the recovery host; a new session lease is
   dedicated. It performs output fan-out and submits office turns to the
   app-server; it never scans Windows Consoles.
+- **Terminal output coalescer** limits only the outer main-PowerShell paint
+  rate. It preserves byte order and flushes on exit; the gateway remains on
+  the uncoalesced session event stream.
 - **SessionBroker** exposes session metadata, observation and message-submit
   operations to the local gateway. It is the only module allowed to translate
   a device grant into a session attachment.
