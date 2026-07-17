@@ -94,6 +94,22 @@ async function main() {
     const host = JSON.parse(fs.readFileSync(hostStatePath, 'utf8'));
     hostProcessId = host.processId;
     assert.equal(isAlive(hostProcessId), true, 'The shared recovery app-server is not alive.');
+    const duplicate = pty.spawn(process.execPath, [path.join(packageRoot, 'bin', 'managed-codex.js'), 'resume', sessions[0].sessionId], {
+      name: 'xterm-256color', cols: 120, rows: 36, cwd: packageRoot,
+      env: { ...process.env, XCODE_STATE_ROOT: stateRoot },
+      useConptyDll: true,
+    });
+    let duplicateOutput = '';
+    let duplicateExit = null;
+    duplicate.onData((data) => { duplicateOutput = appendTail(duplicateOutput, data); });
+    duplicate.onExit((exit) => { duplicateExit = exit; });
+    try {
+      await waitFor(() => duplicateExit !== null, 5_000, 'a duplicate recovery attempt to finish');
+      assert.equal(duplicateExit.exitCode, 0, 'A duplicate recovery did not exit cleanly.');
+      assert.match(duplicateOutput, /already active/i, 'A duplicate recovery was not identified before opening another Codex TUI.');
+      assert.equal(readySessionCount(stateRoot), sessions.length, 'A duplicate recovery published another active office session.');
+    }
+    finally { duplicate.kill(); }
     console.log(`RECOVERY_SHARED_HOST=PASS sessions=${sessions.length} appServerPid=${hostProcessId}`);
   }
   finally {

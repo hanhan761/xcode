@@ -61,6 +61,12 @@ xcode
 
 日常闭环：主力机以 `codex` 启动需要协作的对话，办公本用 `xcode` 加入；结束主力机对话或关闭其标签后，它会自动从办公本列表消失。需要日后继续时，在主力机执行 `codex resume --last`（或使用你的会话恢复工具）重新启动，再由办公本执行 `xcode` 加入。
 
+启动时，`xcode` 会先显示当前阶段。恢复已有对话会复用恢复专用的本地 Codex authority；新建对话使用独立的本地 authority，避免被另一个仍在工作的恢复对话排队阻塞。若 Codex 的初始 bootstrap 请求超时，会明确报错而不会留下空白、无限卡住的 PowerShell 窗口。
+
+恢复工具可安全重复运行：已活跃的 `threadId` 会被跳过，不会再创建第二个标签或第二个原生 Codex 客户端。
+
+若原生 Codex 仍意外退出，主力机可查看 `%LOCALAPPDATA%\XcodeRemote\logs\managed-codex.log`。该文件只记录启动阶段、`threadId`、退出码和错误摘要，不记录对话内容。
+
 ## 安全边界
 
 - Tailscale 提供两台设备之间的私有加密网络；不需要公网 IP 或路由器端口映射。

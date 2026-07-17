@@ -54,9 +54,11 @@ co-presence discussion:
 
 `AppServerSession` is the deep module. It starts a loopback-only native Codex
 app-server, creates or resumes one thread, then starts the ordinary main
-Codex TUI against that exact thread. It owns the session's byte stream only
-for mirroring; conversation authority stays with the app-server. Its small
-interface is:
+Codex TUI against that exact thread. Recovery sessions reuse one recovery
+authority so a saved workspace can return as a group; a new `codex` session
+gets a dedicated authority so it cannot sit behind an unrelated active
+recovery turn. It owns the session's byte stream only for mirroring;
+conversation authority stays with the app-server. Its small interface is:
 
 ```text
 create(codexArgs, cwd) -> Session(threadId)
@@ -96,9 +98,10 @@ flowchart LR
 
 - **CodexEntrypoint** preserves the `codex` command and arguments. It creates
   or resumes a named session through `SessionRunner`.
-- **AppServerSession** owns one loopback app-server and one native remote TUI.
-  It performs output fan-out and submits office turns to the app-server; it
-  never scans Windows Consoles.
+- **AppServerSession** owns one native remote TUI and leases a loopback
+  app-server. A recovery lease joins the recovery host; a new session lease is
+  dedicated. It performs output fan-out and submits office turns to the
+  app-server; it never scans Windows Consoles.
 - **SessionBroker** exposes session metadata, observation and message-submit
   operations to the local gateway. It is the only module allowed to translate
   a device grant into a session attachment.
