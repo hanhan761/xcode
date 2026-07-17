@@ -27,18 +27,35 @@ function restoreTerminal(rawMode) {
   process.stdin.pause();
 }
 
+function terminalDimensions() {
+  return {
+    cols: Math.max(20, process.stdout.columns || 120),
+    rows: Math.max(5, process.stdout.rows || 36),
+  };
+}
+
 async function main() {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error('Managed Codex must be started from an interactive PowerShell terminal.');
   }
   const codex = findNativeCodex();
-  const session = await startSharedAppServerSession({ file: codex, args: process.argv.slice(2), cwd: process.cwd() });
+  const initialSize = terminalDimensions();
+  const session = await startSharedAppServerSession({ file: codex, args: process.argv.slice(2), cwd: process.cwd(), ...initialSize });
   session.onOutput((data) => process.stdout.write(data));
+  const resize = () => {
+    try {
+      const dimensions = terminalDimensions();
+      session.resize(dimensions.cols, dimensions.rows);
+    }
+    catch { /* The terminal is closing or the managed TUI already exited. */ }
+  };
+  process.stdout.on('resize', resize);
   process.stdin.setRawMode(true);
   process.stdin.resume();
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', (data) => session.submitLocal(data));
   const result = await session.completed;
+  process.stdout.off('resize', resize);
   restoreTerminal(true);
   process.exit(result.exitCode || 0);
 }

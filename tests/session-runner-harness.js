@@ -66,6 +66,11 @@ async function main() {
     const office = await attachOfficeGateway(state);
     await waitFor(() => office.frames.some((frame) => frame.type === 'snapshot'), 5000, 'the office snapshot');
 
+    session.resize(140, 30);
+    await waitFor(() => office.frames.some((frame) => frame.type === 'resized' && frame.cols === 140 && frame.rows === 30), 5000, 'a main-PC terminal resize to reach the office client');
+    office.socket.write(`${JSON.stringify({ type: 'resize', cols: 160, rows: 40 })}\n`);
+    await waitFor(() => office.frames.some((frame) => frame.type === 'resized' && frame.cols === 160 && frame.rows === 40), 5000, 'the office full-screen resize acknowledgement');
+
     session.submitLocal('main-message\r');
     const messageId = 'office-message-1';
     office.socket.write(`${JSON.stringify({ type: 'message', messageId, text: 'office-message' })}\n`);

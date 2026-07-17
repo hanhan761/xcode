@@ -46,6 +46,7 @@ async function main() {
   let office;
   let officeOutput = '';
   let sentOfficeMessage = false;
+  let requestedFullScreen = false;
   const session = startManagedSession({
     file: node,
     args: [codexLikeTui],
@@ -108,15 +109,21 @@ async function main() {
       officeOutput += data;
       if (!sentOfficeMessage && officeOutput.includes('Connected')) {
         sentOfficeMessage = true;
-        office.write('office-through-real-gateway\r');
+        requestedFullScreen = true;
+        office.resize(160, 40);
+        setTimeout(() => office.write('office-through-real-gateway\r'), 100);
       }
     });
 
     await waitFor(() => officeOutput.includes('Submitted to the shared Codex conversation'), 8_000, 'the office shared-thread acknowledgement through the real gateway');
+    await waitFor(() => mainOutput.join('').includes('TUI_WIDTH:160'), 8_000, 'the office full-screen width to resize the main PTY');
     await waitFor(() => mainOutput.join('').includes('TUI_RECEIVED:office-through-real-gateway'), 8_000, 'the office message to reach the same main-PC conversation');
     assert.equal(sentOfficeMessage, true, 'The office terminal never accepted its local message.');
-    assert.match(officeOutput, /Codex-like full-screen conversation/, 'The office did not render the main full-screen terminal.');
+    assert.equal(requestedFullScreen, true, 'The office client never issued its full-screen terminal resize.');
+    assert.match(mainOutput.join(''), /┌─{158}┐/, 'The main PTY did not redraw a complete 160-column border.');
+    assert.match(officeOutput, /┌─{158}┐/, 'The office mirror did not render the complete 160-column border.');
     assert.match(officeOutput, /TUI_RECEIVED:main-before-office/, 'The office did not mirror the live main-PC conversation.');
+    assert.match(officeOutput, /TUI_WIDTH:160/, 'The office mirror did not redraw the main TUI at the full terminal width.');
     assert.match(officeOutput, /\x1b\[\?1049h/, 'The office client did not use a single current-window terminal UI.');
 
     office.write('\u0003');

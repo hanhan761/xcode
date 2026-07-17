@@ -22,6 +22,13 @@ async function main() {
     await surface.write('\x1b[?1049l');
     viewport = surface.getViewport({ cols: 24, rows: 5 });
     assert.equal(viewport[0], 'Primary Codex', 'Returning from the alternate screen lost the normal terminal state.');
+
+    surface.resizeRemote(48, 10);
+    const horizontalBorder = `╔${'═'.repeat(46)}╗`;
+    await surface.write(`\x1b[2J\x1b[H${horizontalBorder}\x1b[10;1H${horizontalBorder}`);
+    viewport = surface.getViewport({ cols: 48, rows: 10 });
+    assert.equal(viewport[0], horizontalBorder, 'A resized terminal did not render its complete top border.');
+    assert.equal(viewport[9], horizontalBorder, 'A resized terminal did not render its complete bottom border.');
     console.log('OFFICE_TERMINAL_SURFACE=PASS');
   }
   finally {

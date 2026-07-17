@@ -219,6 +219,7 @@ Assert ((Get-Content -Raw $sessionRunner) -match 'node-pty') 'The managed sessio
 Assert ((Get-Content -Raw $sessionRunner) -match 'xcode-session-') 'The managed session runner does not create a scoped session pipe.'
 Assert ((Get-Content -Raw $sessionRunner) -match 'localEscapeState') 'The input arbiter does not distinguish terminal controls from local draft text.'
 Assert ((Get-Content -Raw $sessionRunner) -match 'getDimensions') 'The session gateway does not report the managed terminal dimensions.'
+Assert ((Get-Content -Raw $sessionRunner) -match "frame\?\.type === 'resize'") 'The session gateway does not accept office terminal resize frames.'
 Assert ((Get-Content -Raw $sessionRunner) -match 'isCodexInputBlocked') 'The session runner does not protect remote messages from Codex safety prompts.'
 Assert ((Get-Content -Raw $sessionGateway) -match 'SSH_ORIGINAL_COMMAND') 'The gateway does not enforce the original SSH command boundary.'
 Assert ((Get-Content -Raw $sessionGateway) -match 'xcode-gateway') 'The gateway does not restrict its command vocabulary.'
@@ -227,6 +228,7 @@ Assert ((Get-Content -Raw $sessionClient) -match "'attach'") 'The office client 
 Assert ((Get-Content -Raw $sessionClient) -match "'message'") 'The office client does not submit collaborative messages.'
 Assert ((Get-Content -Raw $sessionClient) -match "'delivered'") 'The office client does not confirm message delivery to the main terminal.'
 Assert ((Get-Content -Raw $sessionClient) -match 'OfficeTerminalSurface') 'The office client still writes raw main-terminal bytes into PowerShell.'
+Assert ((Get-Content -Raw $sessionClient) -match 'synchronizeTerminalSize') 'The office client does not synchronize terminal dimensions with the main PTY.'
 Assert ((Get-Content -Raw $sessionClient) -match '\?1049h') 'The office client does not stay inside the calling terminal window.'
 $nodeHelpText = (& node.exe $nodeLauncher help | Out-String)
 Assert ($LASTEXITCODE -eq 0 -and $nodeHelpText -match 'xcode office') 'The npm xcode binary cannot launch the dispatcher.'

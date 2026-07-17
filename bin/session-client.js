@@ -72,6 +72,11 @@ function terminalSize() {
   };
 }
 
+function mirrorSize() {
+  const { cols, rows } = terminalSize();
+  return { cols, rows: Math.max(5, rows - 3) };
+}
+
 function displayText(value) {
   return String(value || '').replace(/[\x00-\x1f\x7f-\x9f]/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -107,8 +112,14 @@ async function connectSession(sshConfig, session) {
   const finished = new Promise((resolve) => { resolveFinished = resolve; });
 
   function writeFrame(frame) {
-    if (!bridge.stdin.destroyed) {
-      bridge.stdin.write(`${JSON.stringify(frame)}\n`);
+    if (bridge.stdin.destroyed || !bridge.stdin.writable) { return; }
+    try {
+      bridge.stdin.write(`${JSON.stringify(frame)}\n`, (error) => {
+        if (error && !disconnected) { finish(error); }
+      });
+    }
+    catch (error) {
+      if (!disconnected) { finish(error); }
     }
   }
 
@@ -119,6 +130,18 @@ async function connectSession(sshConfig, session) {
       renderQueued = false;
       render();
     });
+  }
+
+  function synchronizeTerminalSize() {
+    if (!surface || disconnected) { return; }
+    const { cols, rows } = mirrorSize();
+    surface.resizeRemote(cols, rows);
+    writeFrame({ type: 'resize', cols, rows });
+  }
+
+  function onTerminalResize() {
+    synchronizeTerminalSize();
+    queueRender();
   }
 
   function render() {
@@ -151,7 +174,7 @@ async function connectSession(sshConfig, session) {
       process.stdin.pause();
       inputEnabled = false;
     }
-    process.stdout.off('resize', queueRender);
+    process.stdout.off('resize', onTerminalResize);
     if (enteredUi) {
       enteredUi = false;
       process.stdout.write('\x1b[?25h\x1b[?1049l');
@@ -176,7 +199,7 @@ async function connectSession(sshConfig, session) {
     process.stdin.resume();
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', onInput);
-    process.stdout.on('resize', queueRender);
+    process.stdout.on('resize', onTerminalResize);
   }
 
   function queueRemoteOutput(data) {
@@ -204,6 +227,7 @@ async function connectSession(sshConfig, session) {
         status = 'Connected — type below; Enter sends to the main Codex conversation';
         enterUi();
         beginInput();
+        synchronizeTerminalSize();
         remoteWrite = remoteWrite.then(async () => {
           for (const output of outputBeforeAttach.splice(0)) {
             await surface.write(output);
@@ -220,6 +244,14 @@ async function connectSession(sshConfig, session) {
     }
     if (frame.type === 'delivered') {
       status = 'Submitted to the shared Codex conversation — watch the mirrored response';
+      queueRender();
+      return;
+    }
+    if (frame.type === 'resized') {
+      if (!Number.isInteger(frame.cols) || !Number.isInteger(frame.rows)) {
+        throw new Error('The main PC sent malformed terminal dimensions.');
+      }
+      surface?.resizeRemote(frame.cols, frame.rows);
       queueRender();
       return;
     }
@@ -282,6 +314,7 @@ async function connectSession(sshConfig, session) {
     }
   });
   bridge.stderr.on('data', (data) => { bridgeErrors += data; });
+  bridge.stdin.on('error', (error) => finish(error));
   bridge.on('error', (error) => finish(error));
   bridge.on('exit', (code) => {
     if (disconnected) { return; }

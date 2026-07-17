@@ -31,6 +31,7 @@ async function main() {
   const encodedRemote = Buffer.from(remoteBytes, 'utf8').toString('base64');
   const fakeSsh = path.join(fixtureRoot, 'ssh.cmd');
   const sshArgsLog = path.join(fixtureRoot, 'ssh-args.log');
+  const frameLog = path.join(fixtureRoot, 'office-frames.log');
   fs.writeFileSync(fakeSsh, [
     '@echo off',
     'setlocal EnableDelayedExpansion',
@@ -53,7 +54,12 @@ async function main() {
     'if "!previous2!"=="xcode-gateway" if "!previous1!"=="attach" (',
     `  echo {"type":"snapshot","data":"${encodedRemote}"}`,
     '  echo {"type":"attached","sessionId":"11111111-1111-4111-8111-111111111111","cols":40,"rows":8}',
-    '  set /p submitted=',
+    '  set /p first_frame=',
+    '  if not "%XCODE_FRAME_LOG%"=="" echo !first_frame!>>"%XCODE_FRAME_LOG%"',
+    '  set /p second_frame=',
+    '  if not "%XCODE_FRAME_LOG%"=="" echo !second_frame!>>"%XCODE_FRAME_LOG%"',
+    '  set /p third_frame=',
+    '  if not "%XCODE_FRAME_LOG%"=="" echo !third_frame!>>"%XCODE_FRAME_LOG%"',
     '  echo {"type":"queued","messageId":"test-message"}',
     '  echo {"type":"delivered","messageId":"test-message"}',
     '  exit /b 0',
@@ -73,6 +79,7 @@ async function main() {
       XCODE_SSH_PATH: process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe',
       XCODE_SSH_WRAPPER: fakeSsh,
       XCODE_SSH_ARGS_LOG: sshArgsLog,
+      XCODE_FRAME_LOG: frameLog,
     },
     useConptyDll: true,
   });
@@ -83,7 +90,8 @@ async function main() {
     output += data;
     if (!sent && output.includes('Connected')) {
       sent = true;
-      client.write('hello from office\r');
+      client.resize(160, 40);
+      setTimeout(() => client.write('hello from office\r'), 100);
     }
   });
 
@@ -110,6 +118,9 @@ async function main() {
     assert.match(sshArgs, /ServerAliveInterval=30/, 'The persistent office attachment has no SSH application keepalive interval.');
     assert.match(sshArgs, /ServerAliveCountMax=3/, 'The persistent office attachment has no bounded SSH keepalive retry count.');
     assert.match(sshArgs, /TCPKeepAlive=yes/, 'The persistent office attachment has no TCP keepalive enabled.');
+    const submittedFrames = fs.readFileSync(frameLog, 'utf8');
+    assert.match(submittedFrames, /"type":"resize","cols":80,"rows":13/, 'The office client did not synchronize its initial full terminal width to the main PTY.');
+    assert.match(submittedFrames, /"type":"resize","cols":160,"rows":37/, 'The office client did not synchronize a full-screen/window resize to the main PTY.');
     console.log(`OFFICE_CLIENT_SINGLE_WINDOW=PASS package=${packageRoot}`);
   }
   finally {
