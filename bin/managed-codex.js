@@ -3,7 +3,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { startManagedSession } = require('../lib/session-runner');
+const { startSharedAppServerSession } = require('../lib/app-server-session');
 
 function findNativeCodex() {
   const npmRoot = path.join(process.env.APPDATA || '', 'npm', 'node_modules', '@openai', 'codex', 'node_modules', '@openai');
@@ -32,7 +32,7 @@ async function main() {
     throw new Error('Managed Codex must be started from an interactive PowerShell terminal.');
   }
   const codex = findNativeCodex();
-  const session = startManagedSession({ file: codex, args: process.argv.slice(2), cwd: process.cwd() });
+  const session = await startSharedAppServerSession({ file: codex, args: process.argv.slice(2), cwd: process.cwd() });
   session.onOutput((data) => process.stdout.write(data));
   process.stdin.setRawMode(true);
   process.stdin.resume();

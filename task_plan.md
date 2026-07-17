@@ -15,7 +15,7 @@ Replace the unsafe Windows-console scraping broker with a Happy-inspired session
 
 ## Current phase
 
-Phase 6: publish the single-window repair and complete real two-device acceptance.
+Architecture correction: replace PTY-byte collaboration with one Codex thread authority before any further release claims.
 
 ## Containment status
 
@@ -103,6 +103,15 @@ Phase 6: publish the single-window repair and complete real two-device acceptanc
 - [ ] Reject or clearly label a managed Codex process whose terminal has reached its final `Goal achieved` state but whose process and pipe remain alive.
 - [x] Keep the office SSH attachment alive across an otherwise idle main Codex period, then verify that later output and input remain on the same channel (SSH keepalive contract is covered by the office-client and packaged two-machine regressions).
 - **Status:** keepalive repair is implemented and release-artifact verified; deploy it on the office laptop, where the persistent SSH client runs, then perform a real idle-period acceptance check.
+
+### Phase 7: One-thread semantic collaboration
+
+- [x] Prove the supported path: a locally resumed Codex CLI thread has one app-server `threadId`; a desktop task with no exposed local thread id cannot be claimed as attachable.
+- [x] Replace the private-ConPTY `SessionRunner` as the collaboration authority with a main-PC-only Codex app-server thread authority.
+- [x] Have the main native Codex TUI and office `xcode` submit and render the same thread id.
+- [x] Add a red-capable regression that fails if an office-originated turn is absent from the main-side app-server event stream and main TUI output.
+- [x] Define an honest migration for existing PTY-managed/desktop conversations that cannot expose a compatible thread id.
+- **Status:** implemented and locally live-verified. Two-device acceptance after both computers update remains required before declaring the user's existing setup migrated.
 
 ## Design decisions
 

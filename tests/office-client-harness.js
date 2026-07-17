@@ -89,7 +89,7 @@ async function main() {
 
   try {
     try {
-      await waitFor(() => output.includes('Written to the main Codex terminal'), 5_000, 'the office client terminal-write acknowledgement');
+      await waitFor(() => output.includes('Submitted to the shared Codex conversation'), 5_000, 'the office client shared-thread acknowledgement');
     }
     catch (error) {
       error.message += ` Captured terminal: ${JSON.stringify(output)}`;

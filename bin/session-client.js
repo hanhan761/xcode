@@ -214,12 +214,12 @@ async function connectSession(sshConfig, session) {
       return;
     }
     if (frame.type === 'queued') {
-      status = 'Queued on main PC — waiting for its Codex terminal to become ready';
+      status = 'Submitting to the shared Codex conversation…';
       queueRender();
       return;
     }
     if (frame.type === 'delivered') {
-      status = 'Written to the main Codex terminal — watch the mirrored response';
+      status = 'Submitted to the shared Codex conversation — watch the mirrored response';
       queueRender();
       return;
     }
@@ -247,7 +247,7 @@ async function connectSession(sshConfig, session) {
         const message = typed;
         typed = '';
         if (message.trim()) {
-          status = 'Sending to the main Codex terminal…';
+          status = 'Sending to the shared Codex conversation…';
           writeFrame({ type: 'message', messageId: crypto.randomUUID(), text: message });
         }
         queueRender();

@@ -39,11 +39,12 @@ termination left 129 relay sidecars. That is the wrong authority boundary: a
 paired laptop should receive a named Codex-session capability, never the
 ability to choose arbitrary host consoles.
 
-The official Codex app-server is a promising semantic interface for saved
-thread history, but stock Codex does not presently guarantee live co-presence
-between an already-running normal TUI and a second client. Therefore xcode
-must not claim it can safely seize an arbitrary existing normal `codex`
-process. See the upstream app-server documentation and the current
+The official Codex app-server is the semantic authority for xcode-managed
+sessions. The main TUI is deliberately started as `codex resume --remote
+... <threadId>` against that authority, so it and the office client do not
+need to infer or seize an arbitrary running process. This still does not make
+an already-running desktop/CLI task with no exposed compatible `threadId`
+attachable. See the upstream app-server documentation and the current
 co-presence discussion:
 
 - [Codex app-server README](https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md)
@@ -51,15 +52,17 @@ co-presence discussion:
 
 ## Session model
 
-`SessionRunner` is the deep module. It starts one known Codex child in a
-managed pseudoterminal, owns the session's byte stream, and never discovers
-other processes. Its small interface is:
+`AppServerSession` is the deep module. It starts a loopback-only native Codex
+app-server, creates or resumes one thread, then starts the ordinary main
+Codex TUI against that exact thread. It owns the session's byte stream only
+for mirroring; conversation authority stays with the app-server. Its small
+interface is:
 
 ```text
-create(codexArgs, cwd) -> Session
-resume(threadId, codexArgs, cwd) -> Session
+create(codexArgs, cwd) -> Session(threadId)
+resume(threadId, codexArgs, cwd) -> Session(threadId)
 attach(deviceGrant) -> Readable session view
-submitMessage(deviceGrant, message) -> Queued | WrittenToTerminal
+submitMessage(deviceGrant, message) -> Codex turn/start accepted
 stop(session) -> void
 ```
 
@@ -70,37 +73,32 @@ only while its managed child remains alive and its private named pipe accepts a
 local gateway probe; stale state is removed before it can reach an office
 laptop.
 
-`InputArbiter` makes the session collaborative rather than a remote takeover.
-Both surfaces observe the same output. The main PC retains its ordinary
-interactive terminal; the office client submits a complete message, which the
-arbiter serializes with local input and injects into the one Codex terminal.
-It never forwards two devices' individual keystrokes concurrently, because
-that could corrupt a prompt. A pending office message is visible locally and
-is written only when the terminal can accept the next input. A terminal write
-is deliberately not claimed to be a completed Codex turn; the mirrored Codex
-output remains the observable response. Codex safety prompts, including the
-directory-trust prompt, keep remote messages queued until the main PC clears
-them locally. Terminal controls
-such as arrows, history navigation, backspace and cancellation are not local
-draft text and must never indefinitely block a remote message.
+`AppServerSession` makes the session collaborative rather than a remote
+takeover. Both surfaces observe the same output. The main PC retains its
+ordinary interactive terminal; the office client submits a complete message
+as `turn/start` for the same `threadId`. It never forwards office keystrokes
+to the TUI, so local and remote keypresses cannot corrupt a prompt. The
+mirrored Codex output remains the observable response.
 
 ## Modules and seams
 
 ```mermaid
 flowchart LR
   L[Main PC: user types codex] --> E[CodexEntrypoint]
-  E --> R[SessionRunner]
-  R --> C[Native Codex child in a managed PTY]
+  E --> R[AppServerSession]
+  R --> C[Loopback Codex app-server / threadId]
+  C --> T[Native Codex TUI --remote]
   R --> B[SessionBroker]
   O[Office laptop: user types xcode] --> G[Paired xcode gateway]
   G --> B
-  B --> R
+  B -->|turn/start| C
 ```
 
 - **CodexEntrypoint** preserves the `codex` command and arguments. It creates
   or resumes a named session through `SessionRunner`.
-- **SessionRunner** owns one child and its PTY. It performs output fan-out and
-  collaborative input arbitration; it never scans Windows Consoles.
+- **AppServerSession** owns one loopback app-server and one native remote TUI.
+  It performs output fan-out and submits office turns to the app-server; it
+  never scans Windows Consoles.
 - **SessionBroker** exposes session metadata, observation and message-submit
   operations to the local gateway. It is the only module allowed to translate
   a device grant into a session attachment.
@@ -130,9 +128,9 @@ After pairing:
 1. The office `xcode` opens the host's forced xcode gateway.
 2. The gateway authenticates the paired device and offers only explicitly
    registered session metadata.
-3. The office may observe immediately and submit a message. The runner queues
-   that whole message alongside local input; it does not give either device a
-   permanent terminal takeover.
+3. The office may observe immediately and submit a message. The session turns
+   that whole message into `turn/start` on its already-authorized thread; it
+   does not give either device a permanent terminal takeover.
 4. Revoking the device invalidates its grant, closes its connection, and does
    not affect the local Codex child.
 
@@ -158,13 +156,14 @@ external collaborator to coordinate its input safely.
 
 ## Acceptance tests
 
-1. Typing `codex` on the main PC starts one managed child without opening a
-   second general PowerShell shell.
+1. Typing `codex` on the main PC starts one loopback app-server and one native
+   remote TUI without opening a second general PowerShell shell.
 2. `xcode` on a paired office laptop lists only currently active managed
    sessions and can see their output, including work performed locally before
    it attached. Saved but inactive history is never listed.
-3. An office message appears in the main-PC Codex terminal and becomes part of
-   the same Codex conversation; local and remote keystrokes never interleave.
+3. An office message is accepted as `turn/start` for the exact main-PC
+   `threadId`, appears in the main Codex terminal, and becomes part of the
+   same Codex conversation; local and remote keystrokes never interleave.
 4. Reconnect preserves the Codex session and terminal state; stopping xcode
    does not stop local Codex.
 5. Device revocation closes the remote stream and denies later attachment.
