@@ -41,6 +41,8 @@ xcode office
 codex
 # 或
 codex resume --last
+# 无参数 resume 只列出本文件夹的受管对话
+codex resume
 ```
 
 2. 办公本在当前 PowerShell 输入：
