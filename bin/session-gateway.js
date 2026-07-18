@@ -4,6 +4,7 @@
 const fs = require('node:fs');
 const net = require('node:net');
 const path = require('node:path');
+const { isLoopbackWebSocketUrl, relayScopedAppServer } = require('../lib/scoped-app-server-relay');
 
 const stateRoot = path.join(process.env.LOCALAPPDATA || '', 'XcodeRemote', 'managed-sessions');
 const validSessionId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -64,7 +65,13 @@ async function listSessions() {
           fs.rmSync(statePath, { force: true });
           return null;
         }
-        return { sessionId: state.sessionId, cwd: state.cwd, createdAt: state.createdAt };
+        return {
+          sessionId: state.sessionId,
+          cwd: state.cwd,
+          createdAt: state.createdAt,
+          threadId: typeof state.threadId === 'string' ? state.threadId : null,
+          nativeTuiAvailable: typeof state.threadId === 'string' && isLoopbackWebSocketUrl(state.appServerUrl),
+        };
       }
       catch { return null; }
     });
@@ -102,6 +109,20 @@ function attach(sessionId) {
   socket.pipe(process.stdout);
 }
 
+async function native(sessionId) {
+  const state = readSession(sessionId);
+  if (typeof state.threadId !== 'string' || !state.threadId || !isLoopbackWebSocketUrl(state.appServerUrl)) {
+    throw new Error('this managed session does not expose a native Codex client endpoint; restart it after updating xcode');
+  }
+  await relayScopedAppServer({
+    url: state.appServerUrl,
+    threadId: state.threadId,
+    input: process.stdin,
+    output: process.stdout,
+    errorOutput: process.stderr,
+  });
+}
+
 const command = (process.env.SSH_ORIGINAL_COMMAND || '').trim();
 const parts = command.split(/\s+/);
 if (parts.length === 2 && parts[0] === 'xcode-gateway' && parts[1] === 'probe') {
@@ -114,6 +135,12 @@ else if (parts.length === 2 && parts[0] === 'xcode-gateway' && parts[1] === 'lis
 }
 else if (parts.length === 3 && parts[0] === 'xcode-gateway' && parts[1] === 'attach') {
   attach(parts[2]);
+}
+else if (parts.length === 3 && parts[0] === 'xcode-gateway' && parts[1] === 'native') {
+  native(parts[2]).catch((error) => {
+    process.stderr.write(`xcode gateway: ${error.message}\n`);
+    process.exitCode = 1;
+  });
 }
 else {
   fail('command denied');

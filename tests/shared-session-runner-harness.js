@@ -8,6 +8,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const packageRoot = path.resolve(process.env.XCODE_PACKAGE_ROOT || path.join(__dirname, '..'));
 const { startSharedAppServerSession } = require(path.join(packageRoot, 'lib', 'app-server-session'));
+const { findNativeCodex } = require(path.join(packageRoot, 'lib', 'codex-executable'));
 
 function waitFor(predicate, timeoutMs, description) {
   return new Promise((resolve, reject) => {
@@ -25,26 +26,13 @@ function waitFor(predicate, timeoutMs, description) {
   });
 }
 
-function findNativeCodex() {
-  const root = path.join(process.env.APPDATA || '', 'npm', 'node_modules', '@openai', 'codex', 'node_modules', '@openai');
-  for (const packageName of fs.readdirSync(root)) {
-    if (!/^codex-win32-/i.test(packageName)) { continue; }
-    const vendorRoot = path.join(root, packageName, 'vendor');
-    for (const vendor of fs.readdirSync(vendorRoot)) {
-      const candidate = path.join(vendorRoot, vendor, 'bin', 'codex.exe');
-      if (fs.existsSync(candidate)) { return candidate; }
-    }
-  }
-  throw new Error('The native Windows Codex executable was not found.');
-}
-
 async function main() {
   if (process.env.XCODE_RUN_SHARED_SESSION !== '1') {
     console.log('SHARED_SESSION_RUNNER=SKIPPED (set XCODE_RUN_SHARED_SESSION=1 to run the authenticated live proof)');
     return;
   }
 
-  const codex = findNativeCodex();
+  const codex = findNativeCodex({ packageRoot, preferGlobal: false });
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'xcode-shared-session-'));
   const stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xcode-shared-session-state-'));
   const marker = `xcode-main-and-office-${Date.now()}-${Math.random().toString(16).slice(2)}`;

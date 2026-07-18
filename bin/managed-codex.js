@@ -4,25 +4,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { startSharedAppServerSession } = require('../lib/app-server-session');
+const { findNativeCodex } = require('../lib/codex-executable');
 const { createTerminalOutputSink } = require('../lib/terminal-output-sink');
 const { createTerminalOutputCoalescer } = require('../lib/terminal-output-coalescer');
-
-function findNativeCodex() {
-  const npmRoot = path.join(process.env.APPDATA || '', 'npm', 'node_modules', '@openai', 'codex', 'node_modules', '@openai');
-  if (!fs.existsSync(npmRoot)) {
-    throw new Error('Codex is not installed globally. Run npm install --global @openai/codex first.');
-  }
-  for (const packageName of fs.readdirSync(npmRoot)) {
-    if (!/^codex-win32-/i.test(packageName)) { continue; }
-    const vendorRoot = path.join(npmRoot, packageName, 'vendor');
-    if (!fs.existsSync(vendorRoot)) { continue; }
-    for (const vendor of fs.readdirSync(vendorRoot)) {
-      const candidate = path.join(vendorRoot, vendor, 'bin', 'codex.exe');
-      if (fs.existsSync(candidate)) { return candidate; }
-    }
-  }
-  throw new Error('The native Windows Codex executable was not found in the global Codex package. Run codex update, then retry.');
-}
 
 function restoreTerminal(rawMode) {
   if (process.stdin.isTTY && rawMode) { process.stdin.setRawMode(false); }
@@ -82,7 +66,7 @@ async function main() {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error('Managed Codex must be started from an interactive PowerShell terminal.');
   }
-  const codex = findNativeCodex();
+  const codex = findNativeCodex({ preferGlobal: false });
   const initialSize = terminalDimensions();
   const stateRoot = process.env.XCODE_STATE_ROOT || defaultStateRoot();
   const codexArgs = process.argv.slice(2);

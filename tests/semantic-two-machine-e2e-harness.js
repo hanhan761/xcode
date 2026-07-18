@@ -2,8 +2,8 @@
 'use strict';
 
 // Real production path, with only SSH itself replaced by a local command
-// wrapper: office PowerShell UI -> forced gateway -> named pipe -> semantic
-// app-server turn/start -> main native Codex TUI.
+// wrapper: office official Codex TUI -> forced selected-thread gateway ->
+// main private app-server -> main official Codex TUI.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -11,18 +11,17 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const pty = require('node-pty');
+const { Terminal } = require('@xterm/headless');
 
 const packageRoot = path.resolve(process.env.XCODE_PACKAGE_ROOT || path.join(__dirname, '..'));
 const { startSharedAppServerSession } = require(path.join(packageRoot, 'lib', 'app-server-session'));
+const { findNativeCodex } = require(path.join(packageRoot, 'lib', 'codex-executable'));
 
 function waitFor(predicate, timeoutMs, description) {
   return new Promise((resolve, reject) => {
     const deadline = Date.now() + timeoutMs;
     const timer = setInterval(() => {
-      if (predicate()) {
-        clearInterval(timer);
-        resolve();
-      }
+      if (predicate()) { clearInterval(timer); resolve(); }
       else if (Date.now() >= deadline) {
         clearInterval(timer);
         reject(new Error(`Timed out waiting for ${description}.`));
@@ -36,17 +35,13 @@ function isSessionReady(statePath) {
   catch { return false; }
 }
 
-function findNativeCodex() {
-  const root = path.join(process.env.APPDATA || '', 'npm', 'node_modules', '@openai', 'codex', 'node_modules', '@openai');
-  for (const packageName of fs.readdirSync(root)) {
-    if (!/^codex-win32-/i.test(packageName)) { continue; }
-    const vendorRoot = path.join(root, packageName, 'vendor');
-    for (const vendor of fs.readdirSync(vendorRoot)) {
-      const candidate = path.join(vendorRoot, vendor, 'bin', 'codex.exe');
-      if (fs.existsSync(candidate)) { return candidate; }
-    }
+async function typeLikeUser(terminal, text) {
+  for (const character of text) {
+    terminal.write(character);
+    await new Promise((resolve) => setTimeout(resolve, 12));
   }
-  throw new Error('The native Windows Codex executable was not found.');
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  terminal.write('\r');
 }
 
 async function main() {
@@ -61,14 +56,29 @@ async function main() {
   const gateway = path.join(packageRoot, 'bin', 'session-gateway.js');
   const officeSshWrapper = path.join(fixtureRoot, 'office-ssh.cmd');
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'xcode-semantic-workspace-'));
-  const codex = findNativeCodex();
+  const codex = findNativeCodex({ packageRoot, preferGlobal: false });
   const node = process.execPath;
   const command = process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe';
-  const marker = `office-to-main-same-thread-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const marker = `NATIVE_RELAY_ACK_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   let session;
   let office;
   let mainOutput = '';
   let officeOutput = '';
+  let officeScreen = '';
+  const officeTerminal = new Terminal({
+    cols: 100,
+    rows: 24,
+    scrollback: 500,
+    allowProposedApi: true,
+    convertEol: false,
+    logLevel: 'off',
+  });
+
+  function updateOfficeScreen() {
+    const buffer = officeTerminal.buffer.active;
+    officeScreen = Array.from({ length: officeTerminal.rows }, (_, index) =>
+      buffer.getLine(buffer.viewportY + index)?.translateToString(true) || '').join('\n');
+  }
 
   fs.writeFileSync(officeSshWrapper, [
     '@echo off',
@@ -90,9 +100,9 @@ async function main() {
     `  "${node}" "${gateway}"`,
     '  exit /b %ERRORLEVEL%',
     ')',
-    'if "!previous2!"=="xcode-gateway" if "!previous1!"=="attach" (',
+    'if "!previous2!"=="xcode-gateway" if "!previous1!"=="native" (',
     `  set "LOCALAPPDATA=${mainLocalAppData}"`,
-    '  set "SSH_ORIGINAL_COMMAND=xcode-gateway attach !last!"',
+    '  set "SSH_ORIGINAL_COMMAND=xcode-gateway native !last!"',
     `  "${node}" "${gateway}"`,
     '  exit /b %ERRORLEVEL%',
     ')',
@@ -101,11 +111,7 @@ async function main() {
   ].join('\r\n'), 'utf8');
 
   try {
-    session = await startSharedAppServerSession({
-      file: codex,
-      cwd: workspace,
-      stateRoot,
-    });
+    session = await startSharedAppServerSession({ file: codex, cwd: workspace, stateRoot });
     session.onOutput((data) => { mainOutput += data; });
     await waitFor(() => isSessionReady(path.join(stateRoot, `${session.sessionId}.json`)), 10_000, 'the semantic main-session gateway to become ready');
 
@@ -117,24 +123,41 @@ async function main() {
     let sent = false;
     office.onData((data) => {
       officeOutput += data;
-      if (!sent && officeOutput.includes('Ready — type below')) {
+      officeTerminal.write(data, updateOfficeScreen);
+      if (!sent && officeOutput.includes('OpenAI Codex') && officeOutput.includes('›')) {
         sent = true;
-        office.write(`Reply with exactly: ${marker}. Do not use tools.\r`);
+        officeTerminal.resize(148, 38);
+        office.resize(148, 38);
+        setTimeout(() => {
+          typeLikeUser(office, `Reply with exactly ${marker} and nothing else. Do not use tools.`).catch(() => {});
+        }, 500);
       }
     });
 
-    await waitFor(() => officeOutput.includes('Ready — message is in the shared Codex conversation'), 15_000, 'the office client to settle after semantic delivery');
-    await waitFor(() => mainOutput.includes(marker), 90_000, 'the office turn to render in the main native Codex TUI');
-    await waitFor(() => officeOutput.includes(marker), 30_000, 'the same native-Codex reply to render in the office mirror');
-    assert.equal(sent, true, 'The office client never accepted its local message.');
-    assert.match(officeOutput, /\x1b\[\?1049h/, 'The office client did not use its single current-window terminal UI.');
+    await waitFor(() => mainOutput.includes('Working') && officeOutput.includes('Working'), 30_000, 'both official Codex clients to display the shared working turn');
+    await waitFor(() => mainOutput.includes(marker), 120_000, 'the office-originated acknowledgement to render in the main official Codex TUI');
+    await waitFor(() => officeOutput.includes(marker), 30_000, 'the same acknowledgement to render in the office official Codex TUI');
+    assert.equal(sent, true, 'The office official Codex client never accepted its local message.');
+    assert.match(officeOutput, /OpenAI Codex/, 'The office side did not render the official Codex TUI.');
+    assert.match(officeOutput, /›/, 'The official Codex composer was not visible on the office side.');
+    assert.match(officeOutput, /\x1b\[\d+;38r/, 'The official office TUI did not receive the 148x38 ConPTY resize.');
+    assert.match(officeScreen, /›/, 'The official composer was not redrawn after the office terminal resize.');
+    assert.doesNotMatch(officeScreen, /xcode ·|Ready ·|message is in the shared/, 'Legacy xcode renderer chrome leaked into the official TUI.');
+    const officeBuffer = officeTerminal.buffer.active;
+    assert.ok(officeBuffer.baseY > 0, 'The official no-alt-screen office TUI did not retain terminal scrollback.');
+    const liveViewport = officeBuffer.viewportY;
+    officeTerminal.scrollPages(-1);
+    assert.ok(officeBuffer.viewportY < liveViewport, 'PageUp could not review earlier official Codex output.');
+    officeTerminal.scrollToBottom();
+    assert.equal(officeBuffer.viewportY, officeBuffer.baseY, 'The office terminal could not return to live official Codex output.');
     console.log(`SEMANTIC_TWO_MACHINE_E2E=PASS package=${packageRoot}`);
   }
   catch (error) {
-    error.message += `\nmain TUI tail: ${JSON.stringify(mainOutput.slice(-4_000))}\noffice UI tail: ${JSON.stringify(officeOutput.slice(-4_000))}`;
+    error.message += `\nmain TUI tail: ${JSON.stringify(mainOutput.slice(-4_000))}\noffice TUI tail: ${JSON.stringify(officeOutput.slice(-4_000))}`;
     throw error;
   }
   finally {
+    officeTerminal.dispose();
     if (office) { office.kill(); }
     if (session) {
       session.stop();
