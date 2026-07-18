@@ -92,6 +92,15 @@ async function main() {
       error.message += `\nready=${readySessionCount(stateRoot)}/${sessions.length}\nrunner diagnostics=${JSON.stringify(runnerDiagnostics)}`;
       throw error;
     }
+    await waitFor(
+      () => runnerDiagnostics.every((diagnostic) => diagnostic.output.includes('\x1b]0;')),
+      5_000,
+      'every recovered main PowerShell tab to receive a conversation title',
+    );
+    const activeStates = fs.readdirSync(stateRoot)
+      .filter((entry) => entry.endsWith('.json'))
+      .map((entry) => JSON.parse(fs.readFileSync(path.join(stateRoot, entry), 'utf8')));
+    assert.equal(activeStates.every((state) => typeof state.title === 'string' && state.title.length > 0), true, 'A recovered active session omitted its persistent title.');
     const host = JSON.parse(fs.readFileSync(hostStatePath, 'utf8'));
     hostProcessId = host.processId;
     assert.equal(isAlive(hostProcessId), true, 'The shared recovery app-server is not alive.');

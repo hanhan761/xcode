@@ -23,6 +23,7 @@ function writeState(sessionId, processId) {
     processId,
     pipeName: `\\\\.\\pipe\\xcode-session-${sessionId}`,
     cwd: process.cwd(),
+    title: sessionId === activeId ? 'Persistent conversation title' : 'stale',
     createdAt: new Date().toISOString(),
   }));
 }
@@ -67,6 +68,7 @@ async function main() {
     writeState(staleId, 2147483647);
     const response = await runGatewayList();
     assert.deepEqual(response.sessions.map((session) => session.sessionId), [activeId], 'Only a live process with a reachable session pipe may be listed.');
+    assert.equal(response.sessions[0].title, 'Persistent conversation title', 'The office catalog lost the managed conversation title.');
     assert.equal(fs.existsSync(path.join(stateRoot, `${activeId}.json`)), true, 'A live state must remain available.');
     assert.equal(fs.existsSync(path.join(stateRoot, `${staleId}.json`)), false, 'Dead-process state must be cleaned.');
     console.log('ACTIVE_SESSION_CATALOG=PASS');

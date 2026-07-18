@@ -68,6 +68,7 @@ async function listSessions() {
         return {
           sessionId: state.sessionId,
           cwd: state.cwd,
+          title: typeof state.title === 'string' && state.title ? state.title : null,
           createdAt: state.createdAt,
           threadId: typeof state.threadId === 'string' ? state.threadId : null,
           nativeTuiAvailable: typeof state.threadId === 'string' && isLoopbackWebSocketUrl(state.appServerUrl),

@@ -35,9 +35,10 @@ never exposed remotely.
 
 `AppServerSession` starts or leases a loopback-only Codex app-server, creates
 or resumes one thread, and starts the main official TUI. An active state record
-contains an opaque session id, the selected thread id, local app-server URL,
-working directory, process id and creation time. The URL remains on the main
-PC and is never included in the office session list.
+contains an opaque session id, the selected thread id, persisted display
+title, local app-server URL, working directory, process id and creation time.
+The URL remains on the main PC and is never included in the office session
+list.
 
 A state record is listable only while its managed TUI is alive and its private
 named pipe accepts a local liveness probe. Stale records are deleted before
@@ -64,9 +65,10 @@ flowchart LR
 - **AppServerSession** owns the thread authority, main official TUI and
   lifecycle registration. It never scans Windows consoles.
 - **NativeCodexOfficeSession** opens a temporary office-local loopback
-  WebSocket, translates app-server messages to framed SSH stdio, launches the
-  pinned official Codex binary with inherited stdio, and cleans up every child
-  and socket when that local client exits.
+  WebSocket, translates app-server messages to framed SSH stdio, and launches
+  the pinned official Codex binary in a private ConPTY. Ordinary input and
+  official output remain unchanged; only negotiated SGR mouse-wheel events are
+  translated to Codex's own `Ctrl+T` transcript plus `PageUp`/`PageDown`.
 - **ScopedAppServerRelay** is a protocol firewall. It accepts only `ws://`
   loopback targets, rejects mismatched thread ids and denies thread history
   enumeration, creation, fork, delete, archive and unarchive operations.
@@ -75,6 +77,10 @@ flowchart LR
 - **Terminal output coalescer** remains main-PC-only. It prevents transient
   redraw frames from flickering in the outer PowerShell without changing the
   semantic app-server stream consumed by either official TUI.
+- **Session title** comes from official Codex thread metadata. An unnamed
+  thread uses its workspace folder; `/rename` persists a custom name through
+  `thread/name/set`. The name notification updates main and office tabs and
+  the active-session catalog without maintaining a second title database.
 
 ## Pairing and security
 
@@ -123,6 +129,10 @@ scope.
 7. A malicious paired client cannot list history, create, fork, delete,
    archive, unarchive or access a different thread through the relay.
 8. Abnormal exit removes session state and all bridge resources.
+9. A physical office mouse wheel opens/pages the official transcript; keyboard
+   input, standalone Escape and terminal resize continue to reach native Codex.
+10. `/rename` updates both terminal tabs and the office selector; after exit
+    and exact resume, the same persisted title is republished.
 
 Upstream references:
 

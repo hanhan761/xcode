@@ -2,9 +2,11 @@
 
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const path = require('node:path');
 const { PassThrough } = require('node:stream');
 const { WebSocket } = require('ws');
-const { runNativeCodexOfficeSession } = require('../lib/native-codex-office-session');
+const packageRoot = path.resolve(process.env.XCODE_PACKAGE_ROOT || path.join(__dirname, '..'));
+const { runNativeCodexOfficeSession } = require(path.join(packageRoot, 'lib', 'native-codex-office-session'));
 
 const session = {
   sessionId: '11111111-1111-4111-8111-111111111111',
@@ -46,14 +48,18 @@ function spawnFakeCodex(file, args, options) {
   assert.equal(file, 'fixture-codex.exe');
   assert.deepEqual(args.slice(0, 2), ['resume', '--remote']);
   assert.deepEqual(args.slice(3), ['--no-alt-screen', session.threadId]);
-  assert.equal(options.stdio, 'inherit');
-  assert.equal(options.windowsHide, true);
-  const child = new EventEmitter();
-  child.killed = false;
-  child.exitCode = null;
-  child.kill = () => {
-    child.killed = true;
-    child.exitCode = 130;
+  assert.equal(options.cols, 120);
+  assert.equal(options.rows, 36);
+  assert.equal(options.useConptyDll, true);
+  const dataListeners = new Set();
+  const exitListeners = new Set();
+  const child = {
+    killed: false,
+    write() {},
+    resize() {},
+    kill() { this.killed = true; },
+    onData(listener) { dataListeners.add(listener); return { dispose: () => dataListeners.delete(listener) }; },
+    onExit(listener) { exitListeners.add(listener); return { dispose: () => exitListeners.delete(listener) }; },
   };
 
   const socket = new WebSocket(args[2]);
@@ -64,10 +70,11 @@ function spawnFakeCodex(file, args, options) {
     socket.close();
   });
   socket.on('close', () => {
-    child.exitCode = 0;
-    child.emit('exit', 0, null);
+    for (const listener of exitListeners) { listener({ exitCode: 0, signal: 0 }); }
   });
-  socket.on('error', (error) => child.emit('error', error));
+  socket.on('error', (error) => {
+    for (const listener of exitListeners) { listener({ exitCode: 1, signal: 0, error }); }
+  });
   return child;
 }
 
@@ -82,7 +89,9 @@ async function main() {
       gatewayOptions = options;
       return createFakeGateway();
     },
-    spawnProcess: spawnFakeCodex,
+    spawnPty: spawnFakeCodex,
+    terminalInput: new PassThrough(),
+    terminalOutput: new PassThrough(),
   });
   assert.equal(exitCode, 0);
   assert.deepEqual(gatewayArgs, ['native', session.sessionId]);

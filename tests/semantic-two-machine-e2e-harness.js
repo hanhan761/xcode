@@ -143,13 +143,27 @@ async function main() {
     assert.match(officeOutput, /\x1b\[\d+;38r/, 'The official office TUI did not receive the 148x38 ConPTY resize.');
     assert.match(officeScreen, /›/, 'The official composer was not redrawn after the office terminal resize.');
     assert.doesNotMatch(officeScreen, /xcode ·|Ready ·|message is in the shared/, 'Legacy xcode renderer chrome leaked into the official TUI.');
-    const officeBuffer = officeTerminal.buffer.active;
-    assert.ok(officeBuffer.baseY > 0, 'The official no-alt-screen office TUI did not retain terminal scrollback.');
-    const liveViewport = officeBuffer.viewportY;
-    officeTerminal.scrollPages(-1);
-    assert.ok(officeBuffer.viewportY < liveViewport, 'PageUp could not review earlier official Codex output.');
-    officeTerminal.scrollToBottom();
-    assert.equal(officeBuffer.viewportY, officeBuffer.baseY, 'The office terminal could not return to live official Codex output.');
+    assert.match(officeOutput, /\x1b\[\?1000h/, 'The office adapter did not negotiate mouse button/wheel reporting.');
+    assert.match(officeOutput, /\x1b\[\?1006h/, 'The office adapter did not negotiate SGR mouse coordinates.');
+
+    // This is the exact byte sequence Windows Terminal sends for a physical
+    // wheel event after the modes above are enabled. Drive it through the
+    // outer office ConPTY instead of manipulating the headless buffer.
+    officeTerminal.resize(72, 12);
+    office.resize(72, 12);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const wheelOutputStart = officeOutput.length;
+    const baseScreen = officeScreen;
+    office.write('\x1b[<64;40;6M');
+    await waitFor(
+      () => officeOutput.slice(wheelOutputStart).includes('\x1b[?1049h'),
+      5_000,
+      'physical wheel-up to open the official Codex transcript overlay',
+    );
+    await waitFor(() => officeScreen !== baseScreen, 5_000, 'wheel-up to change the visible official Codex page');
+    const earlierPage = officeScreen;
+    office.write('\x1b[<65;40;6M');
+    await waitFor(() => officeScreen !== earlierPage, 5_000, 'physical wheel-down to return toward the live transcript page');
     console.log(`SEMANTIC_TWO_MACHINE_E2E=PASS package=${packageRoot}`);
   }
   catch (error) {

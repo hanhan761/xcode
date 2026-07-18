@@ -7,6 +7,7 @@ const { startSharedAppServerSession } = require('../lib/app-server-session');
 const { findNativeCodex } = require('../lib/codex-executable');
 const { createTerminalOutputSink } = require('../lib/terminal-output-sink');
 const { createTerminalOutputCoalescer } = require('../lib/terminal-output-coalescer');
+const { terminalTitleSequence } = require('../lib/session-title');
 
 function restoreTerminal(rawMode) {
   if (process.stdin.isTTY && rawMode) { process.stdin.setRawMode(false); }
@@ -100,6 +101,7 @@ async function main() {
     session.stop();
   });
   const terminalOutput = createTerminalOutputCoalescer((data) => output.write(data), initialSize);
+  const unsubscribeTitle = session.onTitle((title) => output.write(terminalTitleSequence(title)));
   session.onOutput((data) => terminalOutput.write(data));
   const resize = () => {
     try {
@@ -115,6 +117,7 @@ async function main() {
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', (data) => session.submitLocal(data));
   const result = await session.completed;
+  unsubscribeTitle();
   process.stdout.off('resize', resize);
   await terminalOutput.close();
   output.close();

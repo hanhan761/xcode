@@ -52,7 +52,7 @@ async function chooseSession(sshConfig) {
   if (sessions.length === 1) { return sessions[0]; }
   if (!process.stdin.isTTY) { return sessions[0]; }
   process.stdout.write('Active Codex conversations on the main PC:\n');
-  sessions.forEach((session, index) => process.stdout.write(`  [${index + 1}] ${session.cwd || 'unknown folder'}  ${session.createdAt || ''}\n`));
+  sessions.forEach((session, index) => process.stdout.write(`  [${index + 1}] ${session.title || session.cwd || 'unknown folder'}  ${session.createdAt || ''}\n`));
   const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
     const answer = await prompt.question('Choose a conversation: ');

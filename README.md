@@ -80,3 +80,10 @@ xcode doctor
 ```
 
 主力机生命周期日志位于 `%LOCALAPPDATA%\XcodeRemote\logs\managed-codex.log`，只记录启动阶段、`threadId`、退出码和错误摘要，不记录对话正文。
+
+## 鼠标翻页与对话标题
+
+- 办公本连接后，直接使用鼠标中键滚轮即可翻阅对话。第一次向上滚动会进入官方 Codex 的 transcript，继续滚动按页上翻或下翻；`Esc` 仍按官方方式退出。
+- 新对话的标签页标题默认是工作目录的文件夹名。
+- 在任一端的官方 Codex 输入 `/rename 新标题`，标题由 Codex 持久保存，并实时同步到主力机标签、办公本活动列表和办公本标签。
+- 以后执行 `codex resume <threadId>`，或者用 `C:\Users\13081\Desktop\CodexSessionRecovery\3-resume-last-codex.cmd` 批量恢复，仍会使用修改后的长效标题。

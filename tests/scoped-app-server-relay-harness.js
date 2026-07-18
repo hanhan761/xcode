@@ -26,7 +26,8 @@ assert.equal(policy.acceptClientMessage(request(2, 'thread/resume', { threadId }
 assert.equal(policy.acceptClientMessage(request(3, 'thread/read', { threadId, includeTurns: true })).params.threadId, threadId);
 assert.equal(policy.acceptClientMessage(request(4, 'turn/start', { threadId, input: [] })).params.threadId, threadId);
 assert.equal(policy.acceptClientMessage(request(5, 'turn/interrupt', { threadId, turnId: 'turn-1' })).params.threadId, threadId);
-assert.equal(policy.acceptClientMessage(request(6, 'model/list', {})).method, 'model/list');
+assert.equal(policy.acceptClientMessage(request(6, 'thread/name/set', { threadId, name: 'Persistent title' })).params.threadId, threadId);
+assert.equal(policy.acceptClientMessage(request(7, 'model/list', {})).method, 'model/list');
 
 for (const method of ['thread/list', 'thread/start', 'thread/fork', 'thread/delete', 'thread/archive', 'thread/unarchive']) {
   assert.throws(() => policy.acceptClientMessage(request(20, method, { threadId })), /not permitted/i, method);
@@ -41,6 +42,7 @@ assert.equal(policy.shouldForwardServerMessage(JSON.stringify({ id: 1, result: {
 assert.equal(policy.shouldForwardServerMessage(JSON.stringify({ method: 'turn/started', params: { threadId } })), true);
 assert.equal(policy.shouldForwardServerMessage(JSON.stringify({ method: 'turn/started', params: { threadId: otherThreadId } })), false);
 assert.equal(policy.shouldForwardServerMessage(JSON.stringify({ method: 'thread/started', params: { thread: { id: threadId } } })), true);
+assert.equal(policy.shouldForwardServerMessage(JSON.stringify({ method: 'thread/name/updated', params: { threadId, threadName: 'Persistent title' } })), true);
 assert.equal(policy.shouldForwardServerMessage(JSON.stringify({ method: 'thread/started', params: { thread: { id: otherThreadId } } })), false);
 assert.equal(policy.shouldForwardServerMessage(JSON.stringify({ method: 'account/updated', params: {} })), true);
 assert.equal(policy.shouldForwardServerMessage('{not json'), false);
