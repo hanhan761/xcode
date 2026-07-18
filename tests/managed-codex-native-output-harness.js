@@ -13,7 +13,7 @@ assert.doesNotMatch(managedCodexSource, /terminal-output-coalescer/,
   'The main Codex terminal still redraws snapshots instead of preserving official terminal bytes.');
 assert.match(managedCodexSource, /createTerminalTitleFilter/,
   'The main Codex terminal no longer preserves persistent xcode tab titles.');
-assert.match(managedCodexSource, /session\.onOutput\(\(data\) => terminalOutput\.write\(data\)\)/,
+assert.match(managedCodexSource, /session\.onOutput\(\(data\) => \{[\s\S]*terminalOutput\.write\(data\)/,
   'The main Codex terminal does not forward official output directly.');
 assert.match(managedCodexSource, /const DISABLE_MOUSE_REPORTING =/,
   'The main Codex terminal does not explicitly release the physical mouse wheel.');
