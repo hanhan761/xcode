@@ -24,11 +24,19 @@ function createFakeGateway({ resetAfterInitialize, resetBeforeOpen = false, rece
   child.stdout = new PassThrough();
   child.stderr = new PassThrough();
   child.killed = false;
+  child.forcedKills = 0;
   child.kill = () => {
     if (child.killed) { return; }
     child.killed = true;
+    child.forcedKills += 1;
     child.emit('exit', 0);
   };
+
+  child.stdin.once('end', () => {
+    if (child.killed) { return; }
+    child.exitCode = 0;
+    child.emit('exit', 0);
+  });
 
   let pending = '';
   child.stdin.setEncoding('utf8');
@@ -116,14 +124,19 @@ function createFakeCodexSpawner({
 async function main() {
   const receivedMethods = [];
   let gatewayAttempts = 0;
+  const gateways = [];
   const codex = createFakeCodexSpawner();
   const exitCode = await runNativeCodexOfficeSession({
     session,
     codexExecutable: 'fixture-codex.exe',
-    openGateway: () => createFakeGateway({
-      resetAfterInitialize: gatewayAttempts++ === 0,
-      receivedMethods,
-    }),
+    openGateway: () => {
+      const gateway = createFakeGateway({
+        resetAfterInitialize: gatewayAttempts++ === 0,
+        receivedMethods,
+      });
+      gateways.push(gateway);
+      return gateway;
+    },
     spawnPty: codex.spawnFakeCodex,
     terminalInput: new PassThrough(),
     terminalOutput: new PassThrough(),
@@ -135,6 +148,7 @@ async function main() {
   assert.equal(codex.launches(), 2, 'The official Codex client was not resumed after the transport reset.');
   assert.deepEqual(receivedMethods, ['initialize', 'initialize'], 'The recovered client did not reinitialize the same app-server protocol.');
   assert.equal(new Set(codex.urls()).size, 2, 'Recovery reused a dead local relay URL instead of creating a healthy one.');
+  assert.equal(gateways.every((gateway) => gateway.forcedKills === 0), true, 'A normal Office gateway shutdown was force-killed before it could close the main-PC relay cleanly.');
 
   const persistentResetMethods = [];
   let persistentGatewayAttempts = 0;

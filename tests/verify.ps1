@@ -179,6 +179,7 @@ $nativeGatewayHarness = Join-Path $root 'tests\native-gateway-relay-harness.js'
 $nativeOfficeHarness = Join-Path $root 'tests\native-office-session-harness.js'
 $nativeOfficeMouseHarness = Join-Path $root 'tests\native-office-mouse-wheel-harness.js'
 $nativeOfficeTransportRecoveryHarness = Join-Path $root 'tests\native-office-transport-recovery-harness.js'
+$officeDisconnectIsolationHarness = Join-Path $root 'tests\office-disconnect-isolation-harness.js'
 $managedCodexTransportRecoveryHarness = Join-Path $root 'tests\managed-codex-transport-recovery-harness.js'
 $managedCodexResumeScopeHarness = Join-Path $root 'tests\managed-codex-resume-scope-harness.js'
 $managedResumeIndexHarness = Join-Path $root 'tests\managed-resume-index-harness.js'
@@ -231,6 +232,7 @@ Assert (Test-Path -LiteralPath $nativeGatewayHarness) 'The forced native-gateway
 Assert (Test-Path -LiteralPath $nativeOfficeHarness) 'The native office adapter harness is missing.'
 Assert (Test-Path -LiteralPath $nativeOfficeMouseHarness) 'The physical mouse-wheel adapter harness is missing.'
 Assert (Test-Path -LiteralPath $nativeOfficeTransportRecoveryHarness) 'The native office transport-recovery harness is missing.'
+Assert (Test-Path -LiteralPath $officeDisconnectIsolationHarness) 'The office-disconnect isolation harness is missing.'
 Assert (Test-Path -LiteralPath $managedCodexTransportRecoveryHarness) 'The managed Codex transport-recovery harness is missing.'
 Assert (Test-Path -LiteralPath $managedCodexResumeScopeHarness) 'The managed Codex workspace resume harness is missing.'
 Assert (Test-Path -LiteralPath $managedResumeIndexHarness) 'The managed Codex resume-index harness is missing.'
@@ -329,6 +331,8 @@ Assert ($LASTEXITCODE -eq 0) 'The default managed Codex resume selector was not 
 Assert ($LASTEXITCODE -eq 0) 'The main Codex terminal did not recover after a remote app-server transport reset.'
 & node.exe $nativeOfficeTransportRecoveryHarness
 Assert ($LASTEXITCODE -eq 0) 'The office Codex terminal did not recover after a remote app-server transport reset.'
+& node.exe $officeDisconnectIsolationHarness
+Assert ($LASTEXITCODE -eq 0) 'An Office disconnect could still interrupt the main Codex authority.'
 $nodeHelpText = (& node.exe $nodeLauncher help | Out-String)
 Assert ($LASTEXITCODE -eq 0 -and $nodeHelpText -match 'xcode office') 'The npm xcode binary cannot launch the dispatcher.'
 Assert ((Get-Content -Raw (Join-Path $root 'xcode.cmd')) -match 'bin\\xcode\.js') 'The repository xcode bootstrap does not use the safe npm launcher.'
