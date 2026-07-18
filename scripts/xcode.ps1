@@ -113,6 +113,43 @@ function Get-XcodeActiveManagedSessionProcesses {
     catch { return @() }
 }
 
+function Get-XcodeReleaseInstallation {
+    $node = Get-Command node.exe -ErrorAction SilentlyContinue
+    if (-not $node) { throw 'Node.js is unavailable. Reinstall xcode with npm, then open a new PowerShell window.' }
+    $reporter = Join-Path $RepositoryRoot 'bin\codex-installation.js'
+    if (-not (Test-Path -LiteralPath $reporter -PathType Leaf)) { throw 'The Codex installation verifier is missing. Run xcode update.' }
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = (& $node.Source $reporter --json 2>&1 | Out-String)
+        $exitCode = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $previousErrorActionPreference }
+    if ($exitCode -ne 0) {
+        $detail = $output.Trim()
+        $message = 'xcode could not verify its official Codex installation'
+        if ($detail) { $message += ': ' + $detail }
+        else { $message += '.' }
+        throw $message
+    }
+    try { $report = $output | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw 'xcode received an invalid official Codex installation report. Run xcode update.' }
+    if (-not $report.xcodeVersion -or -not $report.codex -or -not $report.codex.version -or
+        [string]$report.codex.source -notin @('release-payload', 'explicit-override')) {
+        throw 'xcode received an incomplete official Codex installation report. Run xcode update.'
+    }
+    return $report
+}
+
+function Write-XcodeReleaseStatus {
+    $report = Get-XcodeReleaseInstallation
+    Write-Host "xcode version : $($report.xcodeVersion)"
+    Write-Host "Codex version : $($report.codex.version)"
+    Write-Host "Codex source  : $($report.codex.source)"
+    return $report
+}
+
 function Update-XcodePackage {
     $activeManagedSessions = @(Get-XcodeActiveManagedSessionProcesses)
     if ($activeManagedSessions.Count -gt 0) {
@@ -130,7 +167,8 @@ function Update-XcodePackage {
     # Versions before the npm package placed a WezTerm-only xcode.cmd in this
     # directory. It can shadow the npm command in older user PATHs.
     Remove-XcodePathEntry -Directory (Join-Path $env:LOCALAPPDATA 'XcodeRemote\bin')
-    Write-Host 'xcode is updated. The legacy local launcher was removed from your PATH; open a new PowerShell window before your next xcode command.' -ForegroundColor Green
+    $report = Write-XcodeReleaseStatus
+    Write-Host "xcode is updated with verified Codex $($report.codex.version) ($($report.codex.source)). The legacy local launcher was removed from your PATH; open a new PowerShell window before your next xcode command." -ForegroundColor Green
 }
 
 $verb = if ($Command.Count -eq 0) { '' } else { $Command[0].ToLowerInvariant() }
@@ -195,6 +233,7 @@ switch ($installedRole) {
             }
             'status' {
                 Get-Content -Raw -LiteralPath (Join-Path $env:LOCALAPPDATA 'XcodeRemote\host-user.json')
+                Write-XcodeReleaseStatus | Out-Null
             }
             'unpair' {
                 & (Join-Path $PSScriptRoot 'unpair-office.ps1')
@@ -215,6 +254,7 @@ switch ($installedRole) {
                 $statePath = Join-Path $env:LOCALAPPDATA 'XcodeRemote\client.json'
                 if (Test-Path -LiteralPath $statePath -PathType Leaf) { Get-Content -Raw -LiteralPath $statePath }
                 else { Write-Host 'Office role: prepared; pairing: not yet completed.' -ForegroundColor Yellow }
+                Write-XcodeReleaseStatus | Out-Null
             }
             'doctor' { Invoke-XcodeOfficeDoctor }
             'unpair' { throw 'Run xcode unpair on the main PC to revoke this office laptop.' }
