@@ -71,8 +71,8 @@ async function mainHarness() {
   const sessions = [
     createSession({
       outputFrames: [
-        'ERROR: remote app server at `ws://127.0.0.1:58849/` transport failed: WebSocket protocol error: Connection reset ',
-        'without closing handshake\r\n',
+        'ERROR: remote app s\x1b[1Cerver at `ws://127.0.0.1:58849/` transport failed: WebSocket protocol error: Connection reset ',
+        'without closing hand\x1b[1Cshake\r\n',
       ],
       exitCode: 1,
     }),

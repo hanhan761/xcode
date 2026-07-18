@@ -12,8 +12,14 @@ const DISABLE_MOUSE_REPORTING = '\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l';
 const DEFAULT_TRANSPORT_RECOVERY_ATTEMPTS = 2;
 const DEFAULT_TRANSPORT_RECOVERY_DELAY_MS = 250;
 
+function terminalText(output) {
+  return String(output || '')
+    .replace(/\x1b\].*?(?:\x07|\x1b\\)/gs, '')
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
+}
+
 function isRemoteAppServerTransportFailure(output) {
-  return /remote app server[\s\S]{0,1024}transport failed|connection reset without closing handshake/i.test(String(output || ''));
+  return /remote app server[\s\S]{0,1024}transport failed|connection reset without closing handshake/i.test(terminalText(output));
 }
 
 function wait(delayMs) {
