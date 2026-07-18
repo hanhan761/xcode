@@ -23,6 +23,7 @@ First run from this repository:
 After setup:
   codex                 Main PC: start or resume a collaborative Codex session
   xcode                 Office laptop: observe and send messages to a Codex session
+  xcode -aa             Office laptop: open every active main-PC conversation
   xcode pair [host]     Create (main) or join (office) a one-time pairing
   xcode status          Show this machine's xcode role and pairing state
   xcode doctor          Verify an office laptop's secure connection
@@ -64,6 +65,11 @@ function Start-XcodeManagedCodex {
 }
 
 function Connect-XcodeOfficeSharedTerminal {
+    param(
+        [switch]$AttachAll,
+        [string]$SessionId = '',
+        [string]$AttachmentToken = ''
+    )
     [void](Get-XcodeOfficeState)
     $node = Get-Command node.exe -ErrorAction SilentlyContinue
     if (-not $node) { throw 'Node.js is unavailable. Reinstall xcode with npm, then open a new PowerShell window.' }
@@ -71,7 +77,11 @@ function Connect-XcodeOfficeSharedTerminal {
     if (-not (Test-Path -LiteralPath $client -PathType Leaf)) { throw 'The collaborative session client is missing. Run xcode update.' }
     $sshConfig = Join-Path $env:LOCALAPPDATA 'XcodeRemote\ssh_config'
     if (-not (Test-Path -LiteralPath $sshConfig -PathType Leaf)) { throw 'This office laptop is not paired. Run xcode pair first.' }
-    & $node.Source $client --ssh-config $sshConfig
+    $arguments = @('--ssh-config', $sshConfig)
+    if ($AttachAll) { $arguments += '--attach-all' }
+    if ($SessionId) { $arguments += @('--session-id', $SessionId) }
+    if ($AttachmentToken) { $arguments += @('--attachment-token', $AttachmentToken) }
+    & $node.Source $client @arguments
 }
 
 function Invoke-XcodeOfficeDoctor {
@@ -206,6 +216,14 @@ switch ($installedRole) {
         switch ($verb) {
             '' { Connect-XcodeOfficeSharedTerminal }
             'attach' { Connect-XcodeOfficeSharedTerminal }
+            '-aa' {
+                if ($Command.Count -ne 1) { throw 'Usage: xcode -aa' }
+                Connect-XcodeOfficeSharedTerminal -AttachAll
+            }
+            '-a' {
+                if ($Command.Count -ne 3) { throw 'Usage: xcode -a <session-id> <attachment-token>' }
+                Connect-XcodeOfficeSharedTerminal -SessionId $Command[1] -AttachmentToken $Command[2]
+            }
             'pair' {
                 if ($Command.Count -gt 2) { throw 'Usage: xcode pair [main-host]' }
                 $mainHost = if ($Command.Count -eq 2) { $Command[1] } else { 'xcode-main' }

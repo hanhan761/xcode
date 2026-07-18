@@ -51,6 +51,14 @@ xcode
 
 若主力机有多个活跃对话，选择一个即可。办公本只列出当前仍在运行、由新版 xcode 管理的 Codex 对话；退出或仅保存在历史中的对话不会出现。
 
+若要一次在办公本打开主力机的全部活跃协同对话，运行：
+
+```powershell
+xcode -aa
+```
+
+它会在同一个 Windows Terminal 窗口中创建标签页；重复运行会跳过已打开的对话。办公本安装或修复后，桌面还会生成 `Open all main-PC Codex conversations.cmd`，双击它等同于运行 `xcode -aa`。
+
 连接后看到的就是官方 Codex 界面，不再是 xcode 自绘的终端镜像：输入框、多行编辑、快捷键、`Working` 动画、上下滚动、全屏和窗口 resize 都由官方 TUI 处理。办公本退出官方 Codex 客户端不会结束主力机上的对话。
 
 如果对话是在旧版 xcode 中启动的，更新后需要在主力机关闭它并用 `codex resume <threadId>` 或 `codex resume --last` 恢复一次，办公本才能以新版原生方式加入。

@@ -51,6 +51,12 @@ try {
     Write-XcodeUtf8File -Path $atomic -Content 'second'
     Assert ((Get-Content -Raw -LiteralPath $atomic) -eq 'second') 'Atomic overwrite failed under Windows PowerShell 5.1.'
     Assert (@(Get-ChildItem $temp -Filter '*.xcode-replaced-*' -Force).Count -eq 0) 'Atomic replacement left a backup artifact.'
+    $desktopFixture = Join-Path $temp 'desktop'
+    $attachAllLauncher = Write-XcodeOfficeAttachAllLauncher -DesktopDirectory $desktopFixture
+    $attachAllLauncherContent = Get-Content -Raw -LiteralPath $attachAllLauncher
+    Assert ($attachAllLauncherContent -match 'xcode\.cmd -aa') 'The office one-click launcher does not invoke xcode -aa.'
+    Assert ($attachAllLauncherContent -match 'XCODE_EXIT') 'The office one-click launcher does not preserve a failed xcode -aa exit code.'
+    Assert ($attachAllLauncherContent -notmatch 'ssh_config|PRIVATE KEY|tskey-') 'The office one-click launcher contains a credential or gateway path.'
 
     $regressionFailures = @()
     $managedConfigFixture = "# BEGIN XCODE REMOTE MANAGED BLOCK`r`nListenAddress 100.64.0.1`r`n# END XCODE REMOTE MANAGED BLOCK`r`n"
@@ -165,6 +171,8 @@ $hiddenProcessBuild = Join-Path $root 'scripts\build-hidden-process-shim.ps1'
 $terminalOutputSink = Join-Path $root 'lib\terminal-output-sink.js'
 $terminalOutputCoalescer = Join-Path $root 'lib\terminal-output-coalescer.js'
 $codexExecutable = Join-Path $root 'lib\codex-executable.js'
+$officeAttachmentRegistry = Join-Path $root 'lib\office-attachment-registry.js'
+$officeAttachAll = Join-Path $root 'lib\office-attach-all.js'
 $scopedAppServerRelay = Join-Path $root 'lib\scoped-app-server-relay.js'
 $nativeOfficeSession = Join-Path $root 'lib\native-codex-office-session.js'
 $nativeCodexTerminal = Join-Path $root 'lib\native-codex-terminal.js'
@@ -197,6 +205,8 @@ $liveHiddenWindowHarness = Join-Path $root 'tests\live-hidden-app-server-window-
 $transientWindowProbeHarness = Join-Path $root 'tests\transient-window-event-probe-harness.js'
 $visibleWindowProbe = Join-Path $root 'tests\visible-child-window-probe.ps1'
 $roleHarness = Join-Path $root 'tests\role-resolution-harness.ps1'
+$officeAttachAllHarness = Join-Path $root 'tests\office-attach-all-harness.js'
+$sessionClientAttachHarness = Join-Path $root 'tests\session-client-attach-harness.js'
 Assert (Test-Path -LiteralPath $dispatcher) 'The unified xcode dispatcher is missing.'
 Assert (Test-Path -LiteralPath $packagePath) 'The npm package manifest is missing.'
 Assert (Test-Path -LiteralPath $nodeLauncher) 'The npm xcode binary is missing.'
@@ -214,6 +224,8 @@ Assert (Test-Path -LiteralPath $hiddenProcessBuild) 'The Windows hidden-process 
 Assert (Test-Path -LiteralPath $terminalOutputSink) 'The managed-terminal output sink is missing.'
 Assert (Test-Path -LiteralPath $terminalOutputCoalescer) 'The managed-terminal output coalescer is missing.'
 Assert (Test-Path -LiteralPath $codexExecutable) 'The pinned native Codex resolver is missing.'
+Assert (Test-Path -LiteralPath $officeAttachmentRegistry) 'The office attachment registry is missing.'
+Assert (Test-Path -LiteralPath $officeAttachAll) 'The office attach-all controller is missing.'
 Assert (Test-Path -LiteralPath $scopedAppServerRelay) 'The selected-thread app-server relay is missing.'
 Assert (Test-Path -LiteralPath $nativeOfficeSession) 'The office native Codex adapter is missing.'
 Assert (Test-Path -LiteralPath $nativeCodexTerminal) 'The office native Codex terminal adapter is missing.'
@@ -246,6 +258,8 @@ Assert (Test-Path -LiteralPath $liveHiddenWindowHarness) 'The live hidden-window
 Assert (Test-Path -LiteralPath $transientWindowProbeHarness) 'The transient-window event proof is missing.'
 Assert (Test-Path -LiteralPath $visibleWindowProbe) 'The visible-window probe is missing.'
 Assert (Test-Path -LiteralPath $roleHarness) 'The mixed-role resolution harness is missing.'
+Assert (Test-Path -LiteralPath $officeAttachAllHarness) 'The office attach-all harness is missing.'
+Assert (Test-Path -LiteralPath $sessionClientAttachHarness) 'The office session-client attach harness is missing.'
 $package = Get-Content -Raw -LiteralPath $packagePath | ConvertFrom-Json
 Assert ($package.name -eq 'xcode-remote') 'The npm package name is incorrect.'
 Assert ($package.version -eq '1.5.4') 'The native-scrollback release version is incorrect.'
@@ -262,6 +276,8 @@ Assert ((Get-Content -Raw $dispatcher) -match 'Start-XcodeManagedCodex') 'The ma
 Assert ((Get-Content -Raw $dispatcher) -match 'Connect-XcodeOfficeSharedTerminal') 'Office xcode does not attach to the shared host terminal.'
 Assert ((Get-Content -Raw $dispatcher) -match 'Get-XcodeActiveManagedSessionProcesses') 'xcode update does not detect active managed sessions before invoking npm.'
 Assert ((Get-Content -Raw $dispatcher) -match 'Windows cannot replace node-pty') 'xcode update does not explain the native-module update lock.'
+Assert ((Get-Content -Raw $dispatcher) -match "'-aa'") 'The office dispatcher does not expose xcode -aa.'
+Assert ((Get-Content -Raw $dispatcher) -match 'AttachAll') 'The office dispatcher does not route xcode -aa to the batch session client.'
 Assert ($mainScript -notmatch 'session run --') 'The main-PC codex profile still emits a PowerShell-incompatible argument separator.'
 Assert ((Get-Content -Raw $nodeLauncher) -match 'PowerShell -File treats a bare') 'The npm launcher does not tolerate the legacy managed-session separator.'
 Assert ((Get-Content -Raw $managedRunner) -match 'startSharedAppServerSession') 'The main Codex entrypoint still uses the byte-forwarding session authority.'
@@ -298,6 +314,8 @@ Assert ((Get-Content -Raw $sessionGateway) -match "parts\[1\] === 'native'") 'Th
 Assert ((Get-Content -Raw $sessionGateway) -match 'relayScopedAppServer') 'The forced gateway does not use the selected-thread policy relay.'
 Assert ((Get-Content -Raw $sessionClient) -match 'runNativeCodexOfficeSession') 'The office client does not launch the official Codex TUI.'
 Assert ((Get-Content -Raw $sessionClient) -match 'recoverSessionByThread') 'The office client cannot rediscover a recovered managed Codex session by thread.'
+Assert ((Get-Content -Raw $sessionClient) -match "'--attach-all'") 'The office client cannot run xcode -aa.'
+Assert ((Get-Content -Raw $sessionClient) -match 'findSelectedSession') 'A batch-opened office tab cannot revalidate its selected session.'
 Assert ((Get-Content -Raw $nativeOfficeSession) -match "\['native', session\.sessionId\]") 'The office client does not request the selected native session capability.'
 Assert ((Get-Content -Raw $nativeOfficeSession) -match "'--no-alt-screen'") 'The office official Codex TUI does not retain normal terminal scrollback.'
 Assert ((Get-Content -Raw $nativeOfficeSession) -match 'startNativeCodexTerminal') 'The office official Codex TUI is not attached through the native terminal adapter.'
@@ -318,6 +336,10 @@ Assert ($LASTEXITCODE -eq 0) 'A Codex resume can overwrite the stored thread wor
 Assert ($LASTEXITCODE -eq 0) 'The main Codex terminal did not recover after a remote app-server transport reset.'
 & node.exe $nativeOfficeTransportRecoveryHarness
 Assert ($LASTEXITCODE -eq 0) 'The office Codex terminal did not recover after a remote app-server transport reset.'
+& node.exe $officeAttachAllHarness
+Assert ($LASTEXITCODE -eq 0) 'The office batch attach controller did not preserve active-session and duplicate semantics.'
+& node.exe $sessionClientAttachHarness
+Assert ($LASTEXITCODE -eq 0) 'The office tab launcher did not revalidate its selected native Codex session.'
 $nodeHelpText = (& node.exe $nodeLauncher help | Out-String)
 Assert ($LASTEXITCODE -eq 0 -and $nodeHelpText -match 'xcode office') 'The npm xcode binary cannot launch the dispatcher.'
 Assert ((Get-Content -Raw (Join-Path $root 'xcode.cmd')) -match 'bin\\xcode\.js') 'The repository xcode bootstrap does not use the safe npm launcher.'
