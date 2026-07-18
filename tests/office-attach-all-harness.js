@@ -33,12 +33,18 @@ async function main() {
     assert.throws(() => registry.acquireAllLock(), /already in progress/);
     firstLock.release();
     registry.acquireAllLock().release();
-    const staleLock = registry.acquireAllLock();
+    const longRunningLock = registry.acquireAllLock();
     now += 101;
-    const replacementLock = registry.acquireAllLock();
-    staleLock.release();
-    assert.throws(() => registry.acquireAllLock(), /already in progress/, 'A stale lock holder removed a newer attach-all lock.');
-    replacementLock.release();
+    assert.throws(() => registry.acquireAllLock(), /already in progress/, 'A live attach-all recovery lock must not be stolen after its reservation timeout.');
+    longRunningLock.release();
+    registry.acquireAllLock().release();
+    alive.delete(process.pid);
+    const deadLock = registry.acquireAllLock();
+    const recoveredLock = registry.acquireAllLock();
+    alive.add(process.pid);
+    deadLock.release();
+    assert.throws(() => registry.acquireAllLock(), /already in progress/, 'A dead lock holder removed the recovered attach-all lock.');
+    recoveredLock.release();
     alive.delete(process.pid);
 
     const launched = [];
