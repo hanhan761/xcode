@@ -16,6 +16,12 @@ async function main() {
     params: { threadId: savedThreadId },
   });
   assert.equal(Object.hasOwn(request.params, 'cwd'), false, 'A recovery fallback directory must not overwrite the saved Codex workspace.');
+
+  const started = await resolveThreadRequest({}, ['--model', 'gpt-5.6', '--config', 'service_tier="fast"'], fallbackCwd);
+  assert.deepEqual(started, {
+    method: 'thread/start',
+    params: { cwd: fallbackCwd, model: 'gpt-5.6', serviceTier: 'fast' },
+  });
   console.log('APP_SERVER_RESUME_PRESERVES_THREAD=PASS');
 }
 

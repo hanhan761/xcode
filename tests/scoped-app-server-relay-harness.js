@@ -9,6 +9,7 @@ const {
 const threadId = '11111111-1111-4111-8111-111111111111';
 const otherThreadId = '22222222-2222-4222-8222-222222222222';
 const policy = createThreadRelayPolicy(threadId);
+const sharedPolicy = createThreadRelayPolicy(threadId, { model: 'gpt-5.4', serviceTier: null });
 
 function request(id, method, params = {}) {
   return JSON.stringify({ id, method, params });
@@ -28,6 +29,17 @@ assert.equal(policy.acceptClientMessage(request(4, 'turn/start', { threadId, inp
 assert.equal(policy.acceptClientMessage(request(5, 'turn/interrupt', { threadId, turnId: 'turn-1' })).params.threadId, threadId);
 assert.equal(policy.acceptClientMessage(request(6, 'thread/name/set', { threadId, name: 'Persistent title' })).params.threadId, threadId);
 assert.equal(policy.acceptClientMessage(request(7, 'model/list', {})).method, 'model/list');
+
+const resumedWithOfficeDefaults = sharedPolicy.acceptClientMessage(request(8, 'thread/resume', {
+  threadId,
+  model: 'gpt-5.6-terra',
+  serviceTier: 'fast',
+}));
+assert.deepEqual(
+  resumedWithOfficeDefaults.params,
+  { threadId, model: 'gpt-5.4', serviceTier: null },
+  'The office machine local model or Fast default overrode the shared-session policy during resume.',
+);
 
 for (const method of ['thread/list', 'thread/start', 'thread/fork', 'thread/delete', 'thread/archive', 'thread/unarchive']) {
   assert.throws(() => policy.acceptClientMessage(request(20, method, { threadId })), /not permitted/i, method);
