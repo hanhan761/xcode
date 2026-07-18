@@ -101,6 +101,25 @@ async function mainHarness() {
   assert.match(visibleOutput, /Recovering the shared Codex session/i, 'The terminal did not explain that it was recovering the shared session.');
   assert.match(visibleOutput, /RECOVERED/, 'The recovered Codex terminal output was not forwarded.');
 
+  const duplicateInput = createTerminalInput();
+  const duplicateOutput = createTerminalOutput();
+  let duplicateThreadId = null;
+  await main({
+    input: duplicateInput,
+    outputStream: duplicateOutput,
+    args: ['resume', '--model', 'gpt-5.6', '--config', 'service_tier="fast"', threadId],
+    cwd: 'C:\\work\\xcode',
+    stateRoot: 'fixture-state-root',
+    findCodex: () => 'fixture-codex.exe',
+    findActiveThread: (_stateRoot, requestedThreadId) => {
+      duplicateThreadId = requestedThreadId;
+      return { processId: 8123 };
+    },
+    lifecycleLog() {},
+    startSession: async () => { throw new Error('A duplicate restored session must not start a new Codex process.'); },
+  });
+  assert.equal(duplicateThreadId, threadId, 'A resume option before the thread id bypassed duplicate-session detection.');
+
   const exhaustedInput = createTerminalInput();
   const exhaustedOutput = createTerminalOutput();
   let exhaustedVisibleOutput = '';

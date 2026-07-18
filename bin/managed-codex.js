@@ -3,7 +3,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { startSharedAppServerSession } = require('../lib/app-server-session');
+const { parseResumeInvocation, startSharedAppServerSession } = require('../lib/app-server-session');
 const { findNativeCodex } = require('../lib/codex-executable');
 const { createTerminalOutputSink } = require('../lib/terminal-output-sink');
 const { createTerminalTitleFilter } = require('../lib/session-title');
@@ -105,14 +105,15 @@ async function main({
   const codex = findCodex({ preferGlobal: false });
   const initialSize = terminalDimensions(outputStream);
   const codexArgs = args;
-  const resumedThreadId = codexArgs[0] === 'resume' ? codexArgs[1] : null;
+  const resume = parseResumeInvocation(codexArgs);
+  const resumedThreadId = resume?.threadId || null;
   const existing = findActiveThread(stateRoot, resumedThreadId);
   if (existing) {
     outputStream.write(`[xcode] This Codex conversation is already active (PID ${existing.processId}); keeping the existing tab.\r\n`);
     lifecycleLog('duplicate-resume-skipped', { threadId: resumedThreadId, existingProcessId: existing.processId });
     return;
   }
-  const launchLabel = codexArgs[0] === 'resume' ? 'Restoring the shared Codex session…' : 'Starting a shared Codex session…';
+  const launchLabel = resume ? 'Restoring the shared Codex session…' : 'Starting a shared Codex session…';
   outputStream.write(`[xcode] ${launchLabel}\r\n`);
   lifecycleLog('starting', { command: codexArgs[0] || 'new', threadId: resumedThreadId });
   let session = null;

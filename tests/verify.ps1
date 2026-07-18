@@ -281,7 +281,7 @@ Assert ((Get-Content -Raw $managedRunner) -match 'DISABLE_MOUSE_REPORTING') 'The
 Assert ((Get-Content -Raw $managedRunner) -match 'transport-reset-retry') 'The managed Codex entrypoint cannot recover a reset remote app-server transport.'
 Assert ((Get-Content -Raw $appServerSession) -match "'turn/start'") 'The shared-session authority does not submit office messages as Codex turns.'
 Assert ((Get-Content -Raw $appServerSession) -match "'--remote'") 'The main Codex TUI is not resumed against the shared app-server.'
-Assert ((Get-Content -Raw $appServerSession) -match "params: \{ threadId: args\[1\] \}") 'An exact Codex resume can still overwrite the stored thread workspace.'
+Assert ((Get-Content -Raw $appServerSession) -match 'parseResumeInvocation') 'The shared-session authority does not parse a Codex resume before opening a thread.'
 Assert ((Get-Content -Raw $appServerSession) -match 'initializeNewThreadForRemoteTui') 'A new shared thread can still reach the native TUI without a persisted rollout.'
 Assert ((Get-Content -Raw $appServerSession) -match 'shouldShareAppServer') 'New Codex sessions can still be queued behind the recovery authority.'
 Assert ((Get-Content -Raw $appServerSession) -match 'requestWithTimeout') 'A queued Codex bootstrap request can still leave a terminal blank forever.'
@@ -312,6 +312,8 @@ Assert ((Get-Content -Raw $appServerSession) -match "'--no-alt-screen'") 'The ma
 Assert ($LASTEXITCODE -eq 0) 'The selected-thread relay did not preserve authoritative Working terminal states.'
 & node.exe $nativeOfficeHarness
 Assert ($LASTEXITCODE -eq 0) 'The office native adapter did not preserve authoritative Working terminal states.'
+& node.exe $appServerResumeHarness
+Assert ($LASTEXITCODE -eq 0) 'A Codex resume can overwrite the stored thread workspace or lose its selected policy.'
 & node.exe $managedCodexTransportRecoveryHarness
 Assert ($LASTEXITCODE -eq 0) 'The main Codex terminal did not recover after a remote app-server transport reset.'
 & node.exe $nativeOfficeTransportRecoveryHarness
