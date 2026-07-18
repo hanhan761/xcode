@@ -44,6 +44,10 @@ async function typeLikeUser(terminal, text) {
   terminal.write('\r');
 }
 
+function wait(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
 async function main() {
   if (process.env.XCODE_RUN_SEMANTIC_TWO_MACHINE !== '1') {
     console.log('SEMANTIC_TWO_MACHINE_E2E=SKIPPED (set XCODE_RUN_SEMANTIC_TWO_MACHINE=1 to run the authenticated live proof)');
@@ -232,6 +236,7 @@ async function main() {
     officeScreen = '';
     office = startOffice();
     await waitFor(() => officeText.includes('OpenAI Codex') && officeText.includes('›'), 30_000, 'the reconnected official office Codex TUI');
+    await wait(1_000);
     assert.doesNotMatch(visibleTerminalText(officeTerminal), /Working/, 'An old terminal frame resurrected Working after the office reconnect.');
     console.log(`SEMANTIC_TWO_MACHINE_E2E=PASS package=${packageRoot}`);
   }
