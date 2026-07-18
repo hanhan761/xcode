@@ -9,16 +9,26 @@ const { createTerminalOutputSink } = require('../lib/terminal-output-sink');
 const { createTerminalTitleFilter } = require('../lib/session-title');
 
 const DISABLE_MOUSE_REPORTING = '\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l';
+const DEFAULT_TRANSPORT_RECOVERY_ATTEMPTS = 2;
+const DEFAULT_TRANSPORT_RECOVERY_DELAY_MS = 250;
 
-function restoreTerminal(rawMode) {
-  if (process.stdin.isTTY && rawMode) { process.stdin.setRawMode(false); }
-  process.stdin.pause();
+function isRemoteAppServerTransportFailure(output) {
+  return /remote app server[\s\S]{0,1024}transport failed|connection reset without closing handshake/i.test(String(output || ''));
 }
 
-function terminalDimensions() {
+function wait(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+function restoreTerminal(input, rawMode) {
+  if (input.isTTY && rawMode) { input.setRawMode(false); }
+  input.pause();
+}
+
+function terminalDimensions(output = process.stdout) {
   return {
-    cols: Math.max(20, process.stdout.columns || 120),
-    rows: Math.max(5, process.stdout.rows || 36),
+    cols: Math.max(20, output.columns || 120),
+    rows: Math.max(5, output.rows || 36),
   };
 }
 
@@ -64,74 +74,129 @@ function appendLifecycleLog(event, details = {}) {
   catch { /* Diagnostic logging must never disturb an interactive Codex session. */ }
 }
 
-async function main() {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+async function main({
+  input = process.stdin,
+  outputStream = process.stdout,
+  args = process.argv.slice(2),
+  cwd = process.cwd(),
+  stateRoot = process.env.XCODE_STATE_ROOT || defaultStateRoot(),
+  findCodex = findNativeCodex,
+  startSession = startSharedAppServerSession,
+  findActiveThread = findActiveManagedThread,
+  lifecycleLog = appendLifecycleLog,
+  transportRecoveryAttempts = DEFAULT_TRANSPORT_RECOVERY_ATTEMPTS,
+  transportRecoveryDelayMs = DEFAULT_TRANSPORT_RECOVERY_DELAY_MS,
+} = {}) {
+  if (!input.isTTY || !outputStream.isTTY) {
     throw new Error('Managed Codex must be started from an interactive PowerShell terminal.');
   }
-  const codex = findNativeCodex({ preferGlobal: false });
-  const initialSize = terminalDimensions();
-  const stateRoot = process.env.XCODE_STATE_ROOT || defaultStateRoot();
-  const codexArgs = process.argv.slice(2);
+  if (!Number.isInteger(transportRecoveryAttempts) || transportRecoveryAttempts < 0) {
+    throw new RangeError('The transport recovery attempt count must be a non-negative integer.');
+  }
+  if (!Number.isFinite(transportRecoveryDelayMs) || transportRecoveryDelayMs < 0) {
+    throw new RangeError('The transport recovery delay must be a non-negative number.');
+  }
+  const codex = findCodex({ preferGlobal: false });
+  const initialSize = terminalDimensions(outputStream);
+  const codexArgs = args;
   const resumedThreadId = codexArgs[0] === 'resume' ? codexArgs[1] : null;
-  const existing = findActiveManagedThread(stateRoot, resumedThreadId);
+  const existing = findActiveThread(stateRoot, resumedThreadId);
   if (existing) {
-    process.stdout.write(`[xcode] This Codex conversation is already active (PID ${existing.processId}); keeping the existing tab.\r\n`);
-    appendLifecycleLog('duplicate-resume-skipped', { threadId: resumedThreadId, existingProcessId: existing.processId });
+    outputStream.write(`[xcode] This Codex conversation is already active (PID ${existing.processId}); keeping the existing tab.\r\n`);
+    lifecycleLog('duplicate-resume-skipped', { threadId: resumedThreadId, existingProcessId: existing.processId });
     return;
   }
   const launchLabel = codexArgs[0] === 'resume' ? 'Restoring the shared Codex session…' : 'Starting a shared Codex session…';
-  process.stdout.write(`[xcode] ${launchLabel}\r\n`);
-  appendLifecycleLog('starting', { command: codexArgs[0] || 'new', threadId: resumedThreadId });
-  let session;
-  try {
-    session = await startSharedAppServerSession({
-      file: codex,
-      args: codexArgs,
-      cwd: process.cwd(),
-      stateRoot,
-      ...initialSize,
-      onStatus: (message) => process.stdout.write(`[xcode] ${message}\r\n`),
-    });
-  }
-  catch (error) {
-    appendLifecycleLog('startup-failed', { command: codexArgs[0] || 'new', threadId: resumedThreadId, error: error.message });
-    throw error;
-  }
-  const output = createTerminalOutputSink(process.stdout, () => {
+  outputStream.write(`[xcode] ${launchLabel}\r\n`);
+  lifecycleLog('starting', { command: codexArgs[0] || 'new', threadId: resumedThreadId });
+  let session = null;
+  const output = createTerminalOutputSink(outputStream, () => {
     process.exitCode = 1;
-    session.stop();
+    session?.stop();
   });
-  const terminalOutput = createTerminalTitleFilter((data) => output.write(data), session.title);
-  output.write(DISABLE_MOUSE_REPORTING);
-  terminalOutput.setSessionTitle(session.title);
-  const unsubscribeTitle = session.onTitle((title) => terminalOutput.setSessionTitle(title));
-  session.onOutput((data) => terminalOutput.write(data));
   const resize = () => {
     try {
-      const dimensions = terminalDimensions();
-      session.resize(dimensions.cols, dimensions.rows);
+      const dimensions = terminalDimensions(outputStream);
+      session?.resize(dimensions.cols, dimensions.rows);
     }
     catch { /* The terminal is closing or the managed TUI already exited. */ }
   };
-  process.stdout.on('resize', resize);
-  process.stdin.setRawMode(true);
-  process.stdin.resume();
-  process.stdin.setEncoding('utf8');
-  process.stdin.on('data', (data) => session.submitLocal(data));
-  const result = await session.completed;
-  unsubscribeTitle();
-  process.stdout.off('resize', resize);
-  terminalOutput.flush();
-  output.write(DISABLE_MOUSE_REPORTING);
-  output.close();
-  restoreTerminal(true);
-  appendLifecycleLog('stopped', { sessionId: session.sessionId, threadId: session.threadId, exitCode: result.exitCode, signal: result.signal });
-  process.exit(result.exitCode || process.exitCode || 0);
+  outputStream.on('resize', resize);
+  input.setRawMode(true);
+  input.resume();
+  input.setEncoding('utf8');
+  const onInput = (data) => session?.submitLocal(data);
+  input.on('data', onInput);
+
+  let sessionArgs = codexArgs;
+  let recoveryAttempts = 0;
+  let result;
+  try {
+    for (;;) {
+      try {
+        session = await startSession({
+          file: codex,
+          args: sessionArgs,
+          cwd,
+          stateRoot,
+          ...initialSize,
+          onStatus: (message) => outputStream.write(`[xcode] ${message}\r\n`),
+        });
+      }
+      catch (error) {
+        lifecycleLog('startup-failed', { command: sessionArgs[0] || 'new', threadId: sessionArgs[1] || null, error: error.message });
+        throw error;
+      }
+
+      let outputTail = '';
+      const terminalOutput = createTerminalTitleFilter((data) => output.write(data), session.title);
+      output.write(DISABLE_MOUSE_REPORTING);
+      terminalOutput.setSessionTitle(session.title);
+      const unsubscribeTitle = session.onTitle((title) => terminalOutput.setSessionTitle(title));
+      const unsubscribeOutput = session.onOutput((data) => {
+        outputTail = `${outputTail}${data}`.slice(-8_192);
+        terminalOutput.write(data);
+      });
+      result = await session.completed;
+      unsubscribeTitle();
+      unsubscribeOutput?.();
+      terminalOutput.flush();
+
+      const transportReset = Number(result.exitCode) !== 0 && isRemoteAppServerTransportFailure(outputTail);
+      if (transportReset && recoveryAttempts < transportRecoveryAttempts) {
+        recoveryAttempts += 1;
+        output.write(`[xcode] Remote app-server transport reset; recovering the shared Codex session (${recoveryAttempts}/${transportRecoveryAttempts})…\r\n`);
+        lifecycleLog('transport-reset-retry', { sessionId: session.sessionId, threadId: session.threadId, attempt: recoveryAttempts });
+        sessionArgs = ['resume', session.threadId];
+        session = null;
+        if (transportRecoveryDelayMs > 0) { await wait(transportRecoveryDelayMs); }
+        continue;
+      }
+      if (transportReset) {
+        output.write(`[xcode] The shared Codex transport could not recover after ${recoveryAttempts} retry attempts. Run codex resume ${session.threadId}.\r\n`);
+        lifecycleLog('transport-reset-exhausted', { sessionId: session.sessionId, threadId: session.threadId, attempts: recoveryAttempts });
+      }
+      break;
+    }
+  }
+  finally {
+    outputStream.off('resize', resize);
+    input.off('data', onInput);
+    output.write(DISABLE_MOUSE_REPORTING);
+    output.close();
+    restoreTerminal(input, true);
+  }
+  lifecycleLog('stopped', { sessionId: session?.sessionId, threadId: session?.threadId, exitCode: result.exitCode, signal: result.signal });
+  return result.exitCode || process.exitCode || 0;
 }
 
-main().catch((error) => {
-  appendLifecycleLog('fatal', { error: error.message });
-  restoreTerminal(process.stdin.isRaw);
-  process.stderr.write(`xcode: ${error.message}\n`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().then((exitCode) => process.exit(exitCode)).catch((error) => {
+    appendLifecycleLog('fatal', { error: error.message });
+    restoreTerminal(process.stdin, process.stdin.isRaw);
+    process.stderr.write(`xcode: ${error.message}\n`);
+    process.exit(1);
+  });
+}
+
+module.exports = { main };
