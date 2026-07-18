@@ -67,8 +67,9 @@ flowchart LR
 - **NativeCodexOfficeSession** opens a temporary office-local loopback
   WebSocket, translates app-server messages to framed SSH stdio, and launches
   the pinned official Codex binary in a private ConPTY. Ordinary input and
-  official output remain unchanged; only negotiated SGR mouse-wheel events are
-  translated to Codex's own `Ctrl+T` transcript plus `PageUp`/`PageDown`.
+  official output remain unchanged. The outer terminal explicitly disables
+  VT mouse reporting, so Windows Terminal scrolls the normal-buffer history
+  produced by Codex's `--no-alt-screen` mode instead of forwarding wheel bytes.
 - **ScopedAppServerRelay** is a protocol firewall. It accepts only `ws://`
   loopback targets, rejects mismatched thread ids and denies thread history
   enumeration, creation, fork, delete, archive and unarchive operations.
@@ -129,8 +130,9 @@ scope.
 7. A malicious paired client cannot list history, create, fork, delete,
    archive, unarchive or access a different thread through the relay.
 8. Abnormal exit removes session state and all bridge resources.
-9. A physical office mouse wheel opens/pages the official transcript; keyboard
-   input, standalone Escape and terminal resize continue to reach native Codex.
+9. A physical office mouse wheel scrolls Windows Terminal's normal-buffer
+   history without `Shift`; keyboard input, standalone Escape and terminal
+   resize continue to reach native Codex.
 10. `/rename` updates both terminal tabs and the office selector; after exit
     and exact resume, the same persisted title is republished.
 

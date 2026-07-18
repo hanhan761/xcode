@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const path = require('node:path');
 const { PassThrough } = require('node:stream');
+const { Terminal } = require('@xterm/headless');
 const packageRoot = path.resolve(process.env.XCODE_PACKAGE_ROOT || path.join(__dirname, '..'));
 const { runNativeCodexOfficeSession } = require(path.join(packageRoot, 'lib', 'native-codex-office-session'));
 
@@ -67,8 +68,12 @@ async function main() {
   terminalOutput.columns = 100;
   terminalOutput.rows = 24;
   terminalOutput.setEncoding('utf8');
+  const hostTerminal = new Terminal({ cols: 100, rows: 24, scrollback: 200, allowProposedApi: true });
   let visibleOutput = '';
-  terminalOutput.on('data', (data) => { visibleOutput += data; });
+  terminalOutput.on('data', (data) => {
+    visibleOutput += data;
+    hostTerminal.write(data);
+  });
   let fakePty;
   let gateway;
 
@@ -86,22 +91,11 @@ async function main() {
       killed: false,
       write(data) {
         this.writes.push(data);
-        if (data === '\x14') {
-          queueMicrotask(() => dataListeners.forEach((listener) => listener('\x1b[?1049hTRANSCRIPT_BOTTOM')));
-        }
-        else if (data === '\x1b[5~') {
-          queueMicrotask(() => dataListeners.forEach((listener) => listener('TRANSCRIPT_EARLIER_PAGE')));
-        }
-        else if (data === '\x1b[6~') {
-          queueMicrotask(() => {
-            dataListeners.forEach((listener) => listener('TRANSCRIPT_LATER_PAGE'));
-            exitListeners.forEach((listener) => listener({ exitCode: 0, signal: 0 }));
-          });
-        }
       },
       resize(cols, rows) { this.resizes.push({ cols, rows }); },
       kill() { this.killed = true; },
       emitData(data) { dataListeners.forEach((listener) => listener(data)); },
+      emitExit(event) { exitListeners.forEach((listener) => listener(event)); },
       onData(listener) { dataListeners.add(listener); return { dispose: () => dataListeners.delete(listener) }; },
       onExit(listener) { exitListeners.add(listener); return { dispose: () => exitListeners.delete(listener) }; },
     };
@@ -141,8 +135,9 @@ async function main() {
     500,
     'the persistent office title to win after a split official title update',
   );
-  assert.match(visibleOutput, /\x1b\[\?1000h/);
-  assert.match(visibleOutput, /\x1b\[\?1006h/);
+  assert.match(visibleOutput, /\x1b\[\?1000l/);
+  assert.match(visibleOutput, /\x1b\[\?1006l/);
+  assert.doesNotMatch(visibleOutput, /\x1b\[\?100[0236]h/, 'The office adapter captured the host terminal mouse wheel.');
 
   terminalInput.write('hello');
   await waitFor(() => fakePty.writes.includes('hello'), 500, 'ordinary keyboard input to reach official Codex');
@@ -154,24 +149,20 @@ async function main() {
   terminalInput.write(unicode.subarray(1));
   await waitFor(() => fakePty.writes.includes('中'), 500, 'split UTF-8 keyboard input to remain intact');
 
-  terminalInput.write('\x1b[<0;5;5M');
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.equal(fakePty.writes.includes('\x1b[<0;5;5M'), false, 'An unsupported mouse click leaked into the Codex composer.');
-
   terminalOutput.columns = 132;
   terminalOutput.rows = 37;
   terminalOutput.emit('resize');
   await waitFor(() => fakePty.resizes.some(({ cols, rows }) => cols === 132 && rows === 37), 500, 'the office ConPTY resize');
 
-  terminalInput.write('\x1b[<64;40');
-  terminalInput.write(';12M');
-  await waitFor(() => visibleOutput.includes('TRANSCRIPT_EARLIER_PAGE'), 500, 'wheel-up to open and page the official transcript');
-  assert.ok(fakePty.writes.includes('\x14'), 'wheel-up did not open the official Ctrl+T transcript');
-  assert.ok(fakePty.writes.includes('\x1b[5~'), 'wheel-up did not send PageUp to the official transcript');
+  fakePty.emitData(Array.from({ length: 80 }, (_, index) => `HISTORY_${index}\r\n`).join(''));
+  await waitFor(() => hostTerminal.buffer.normal.baseY > 0, 500, 'normal terminal scrollback to accumulate');
+  assert.equal(hostTerminal.buffer.active.type, 'normal', 'The office client switched away from the host scrollback buffer.');
+  const liveViewport = hostTerminal.buffer.normal.viewportY;
+  hostTerminal.scrollLines(-5);
+  assert.ok(hostTerminal.buffer.normal.viewportY < liveViewport, 'The normal terminal history could not scroll upward.');
 
-  terminalInput.write('\x1b[<65;40;12M');
-  await waitFor(() => visibleOutput.includes('TRANSCRIPT_LATER_PAGE'), 500, 'wheel-down to page the official transcript');
-  assert.ok(fakePty.writes.includes('\x1b[6~'), 'wheel-down did not send PageDown to the official transcript');
+  // Complete through the same native child exit callback used in production.
+  fakePty.emitExit({ exitCode: 0, signal: 0 });
 
   const exitCode = await run;
   assert.equal(exitCode, 0);

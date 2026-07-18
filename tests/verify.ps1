@@ -244,7 +244,7 @@ Assert (Test-Path -LiteralPath $visibleWindowProbe) 'The visible-window probe is
 Assert (Test-Path -LiteralPath $roleHarness) 'The mixed-role resolution harness is missing.'
 $package = Get-Content -Raw -LiteralPath $packagePath | ConvertFrom-Json
 Assert ($package.name -eq 'xcode-remote') 'The npm package name is incorrect.'
-Assert ($package.version -eq '1.5.1') 'The wheel-and-title synchronization release version is incorrect.'
+Assert ($package.version -eq '1.5.2') 'The native-scrollback release version is incorrect.'
 Assert ($package.bin.xcode -eq 'bin/xcode.js') 'npm does not expose the xcode command.'
 Assert ($package.dependencies.'@openai/codex' -eq '0.144.5') 'The two devices do not share the verified official Codex version.'
 Assert ($package.dependencies.ws -eq '8.21.1') 'The selected-thread WebSocket bridge dependency is not pinned.'
@@ -294,7 +294,8 @@ Assert ((Get-Content -Raw $nativeOfficeSession) -match "\['native', session\.ses
 Assert ((Get-Content -Raw $nativeOfficeSession) -match "'--no-alt-screen'") 'The office official Codex TUI does not retain normal terminal scrollback.'
 Assert ((Get-Content -Raw $nativeOfficeSession) -match 'startNativeCodexTerminal') 'The office official Codex TUI is not attached through the native terminal adapter.'
 Assert ((Get-Content -Raw $nativeCodexTerminal) -match "require\('node-pty'\)") 'The office native terminal does not use a private Windows ConPTY.'
-Assert ((Get-Content -Raw $nativeCodexTerminal) -match '\?1006h') 'The office native terminal does not negotiate SGR mouse-wheel input.'
+Assert ((Get-Content -Raw $nativeCodexTerminal) -match '\?1006l') 'The office native terminal does not release SGR mouse capture for native scrollback.'
+Assert ((Get-Content -Raw $nativeCodexTerminal) -notmatch '\?1006h') 'The office native terminal still captures physical mouse-wheel input.'
 Assert ((Get-Content -Raw $scopedAppServerRelay) -match 'DENIED_THREAD_METHODS') 'The remote device can enumerate or mutate unrelated Codex threads.'
 Assert ((Get-Content -Raw $scopedAppServerRelay) -match 'isLoopbackWebSocketUrl') 'The app-server relay is not restricted to a private main-PC endpoint.'
 Assert ((Get-Content -Raw $appServerSession) -match "'--no-alt-screen'") 'The managed native Codex TUI does not retain terminal scrollback for the office mirror.'

@@ -143,27 +143,10 @@ async function main() {
     assert.match(officeOutput, /\x1b\[\d+;38r/, 'The official office TUI did not receive the 148x38 ConPTY resize.');
     assert.match(officeScreen, /›/, 'The official composer was not redrawn after the office terminal resize.');
     assert.doesNotMatch(officeScreen, /xcode ·|Ready ·|message is in the shared/, 'Legacy xcode renderer chrome leaked into the official TUI.');
-    assert.match(officeOutput, /\x1b\[\?1000h/, 'The office adapter did not negotiate mouse button/wheel reporting.');
-    assert.match(officeOutput, /\x1b\[\?1006h/, 'The office adapter did not negotiate SGR mouse coordinates.');
-
-    // This is the exact byte sequence Windows Terminal sends for a physical
-    // wheel event after the modes above are enabled. Drive it through the
-    // outer office ConPTY instead of manipulating the headless buffer.
-    officeTerminal.resize(72, 12);
-    office.resize(72, 12);
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const wheelOutputStart = officeOutput.length;
-    const baseScreen = officeScreen;
-    office.write('\x1b[<64;40;6M');
-    await waitFor(
-      () => officeOutput.slice(wheelOutputStart).includes('\x1b[?1049h'),
-      5_000,
-      'physical wheel-up to open the official Codex transcript overlay',
-    );
-    await waitFor(() => officeScreen !== baseScreen, 5_000, 'wheel-up to change the visible official Codex page');
-    const earlierPage = officeScreen;
-    office.write('\x1b[<65;40;6M');
-    await waitFor(() => officeScreen !== earlierPage, 5_000, 'physical wheel-down to return toward the live transcript page');
+    assert.match(officeOutput, /\x1b\[\?1000l/, 'The office adapter did not release the host terminal mouse wheel.');
+    assert.match(officeOutput, /\x1b\[\?1006l/, 'The office adapter left SGR mouse reporting enabled.');
+    assert.doesNotMatch(officeOutput, /\x1b\[\?100[0236]h/, 'The office adapter captured the physical mouse wheel.');
+    assert.equal(officeTerminal.buffer.active.type, 'normal', 'The official office TUI did not retain normal terminal scrollback.');
     console.log(`SEMANTIC_TWO_MACHINE_E2E=PASS package=${packageRoot}`);
   }
   catch (error) {
