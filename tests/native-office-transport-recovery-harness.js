@@ -18,7 +18,7 @@ function gatewayFrame(frame) {
   return `${JSON.stringify(frame)}\n`;
 }
 
-function createFakeGateway({ resetAfterInitialize, resetBeforeOpen = false, receivedMethods }) {
+function createFakeGateway({ resetAfterInitialize, resetBeforeOpen = false, receivedMethods, shutdownError = false }) {
   const child = new EventEmitter();
   child.stdin = new PassThrough();
   child.stdout = new PassThrough();
@@ -34,6 +34,10 @@ function createFakeGateway({ resetAfterInitialize, resetBeforeOpen = false, rece
 
   child.stdin.once('end', () => {
     if (child.killed) { return; }
+    if (shutdownError) {
+      child.emit('error', new Error('fixture gateway shutdown error'));
+      return;
+    }
     child.exitCode = 0;
     child.emit('exit', 0);
   });
@@ -149,6 +153,20 @@ async function main() {
   assert.deepEqual(receivedMethods, ['initialize', 'initialize'], 'The recovered client did not reinitialize the same app-server protocol.');
   assert.equal(new Set(codex.urls()).size, 2, 'Recovery reused a dead local relay URL instead of creating a healthy one.');
   assert.equal(gateways.every((gateway) => gateway.forcedKills === 0), true, 'A normal Office gateway shutdown was force-killed before it could close the main-PC relay cleanly.');
+
+  const shutdownErrorGateway = createFakeGateway({ resetAfterInitialize: false, receivedMethods: [], shutdownError: true });
+  const shutdownErrorCodex = createFakeCodexSpawner({ closeAfterResponse: () => true, closeExitCode: () => 0 });
+  const shutdownErrorExitCode = await runNativeCodexOfficeSession({
+    session,
+    codexExecutable: 'fixture-codex.exe',
+    openGateway: () => shutdownErrorGateway,
+    spawnPty: shutdownErrorCodex.spawnFakeCodex,
+    terminalInput: new PassThrough(),
+    terminalOutput: new PassThrough(),
+    transportRecoveryDelayMs: 0,
+  });
+  assert.equal(shutdownErrorExitCode, 0, 'A gateway cleanup error changed the completed Office Codex result.');
+  assert.equal(shutdownErrorGateway.forcedKills, 1, 'A non-exited gateway that errors during cleanup was not force-reaped.');
 
   const persistentResetMethods = [];
   let persistentGatewayAttempts = 0;
