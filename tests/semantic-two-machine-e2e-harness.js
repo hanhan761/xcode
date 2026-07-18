@@ -14,7 +14,7 @@ const pty = require('node-pty');
 const { Terminal } = require('@xterm/headless');
 
 const packageRoot = path.resolve(process.env.XCODE_PACKAGE_ROOT || path.join(__dirname, '..'));
-const { startSharedAppServerSession } = require(path.join(packageRoot, 'lib', 'app-server-session'));
+const { AppServerClient, startSharedAppServerSession } = require(path.join(packageRoot, 'lib', 'app-server-session'));
 const { findNativeCodex } = require(path.join(packageRoot, 'lib', 'codex-executable'));
 
 function waitFor(predicate, timeoutMs, description) {
@@ -44,6 +44,10 @@ async function typeLikeUser(terminal, text) {
   terminal.write('\r');
 }
 
+function wait(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
 async function main() {
   if (process.env.XCODE_RUN_SEMANTIC_TWO_MACHINE !== '1') {
     console.log('SEMANTIC_TWO_MACHINE_E2E=SKIPPED (set XCODE_RUN_SEMANTIC_TWO_MACHINE=1 to run the authenticated live proof)');
@@ -62,6 +66,8 @@ async function main() {
   const marker = `NATIVE_RELAY_ACK_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   let session;
   let office;
+  let control;
+  const controlEvents = [];
   let mainOutput = '';
   let officeOutput = '';
   let mainText = '';
@@ -75,14 +81,17 @@ async function main() {
     convertEol: false,
     logLevel: 'off',
   });
-  const officeTerminal = new Terminal({
-    cols: 100,
-    rows: 24,
-    scrollback: 500,
-    allowProposedApi: true,
-    convertEol: false,
-    logLevel: 'off',
-  });
+  function createOfficeTerminal() {
+    return new Terminal({
+      cols: 100,
+      rows: 24,
+      scrollback: 500,
+      allowProposedApi: true,
+      convertEol: false,
+      logLevel: 'off',
+    });
+  }
+  let officeTerminal = createOfficeTerminal();
 
   function terminalText(terminal) {
     const buffer = terminal.buffer.active;
@@ -90,11 +99,42 @@ async function main() {
       buffer.getLine(index)?.translateToString(true) || '').join('\n');
   }
 
+  function visibleTerminalText(terminal) {
+    const buffer = terminal.buffer.active;
+    return Array.from({ length: terminal.rows }, (_, index) =>
+      buffer.getLine(buffer.viewportY + index)?.translateToString(true) || '').join('\n');
+  }
+
   function updateOfficeScreen() {
     const buffer = officeTerminal.buffer.active;
     officeScreen = Array.from({ length: officeTerminal.rows }, (_, index) =>
       buffer.getLine(buffer.viewportY + index)?.translateToString(true) || '').join('\n');
     officeText = terminalText(officeTerminal);
+  }
+
+  let sent = false;
+  let officeGeneration = 0;
+  function startOffice({ sendInitialMessage = false } = {}) {
+    const child = pty.spawn(node, ['bin/session-client.js', '--ssh-config', path.join(fixtureRoot, 'office-ssh-config')], {
+      name: 'xterm-256color', cols: 100, rows: 24, cwd: packageRoot,
+      env: { ...process.env, XCODE_SSH_PATH: command, XCODE_SSH_WRAPPER: officeSshWrapper },
+      useConptyDll: true,
+    });
+    const generation = ++officeGeneration;
+    child.onData((data) => {
+      if (generation !== officeGeneration) { return; }
+      officeOutput += data;
+      officeTerminal.write(data, updateOfficeScreen);
+      if (sendInitialMessage && !sent && officeOutput.includes('OpenAI Codex') && officeOutput.includes('›')) {
+        sent = true;
+        officeTerminal.resize(148, 38);
+        child.resize(148, 38);
+        setTimeout(() => {
+          typeLikeUser(child, `Reply with exactly ${marker} and nothing else. Do not use tools.`).catch(() => {});
+        }, 500);
+      }
+    });
+    return child;
   }
 
   fs.writeFileSync(officeSshWrapper, [
@@ -134,29 +174,64 @@ async function main() {
       mainTerminal.write(data, () => { mainText = terminalText(mainTerminal); });
     });
     await waitFor(() => isSessionReady(path.join(stateRoot, `${session.sessionId}.json`)), 10_000, 'the semantic main-session gateway to become ready');
+    const activeSession = JSON.parse(fs.readFileSync(path.join(stateRoot, `${session.sessionId}.json`), 'utf8'));
+    control = await new AppServerClient(activeSession.appServerUrl, 'xcode-working-state-proof').connect();
+    control.onNotification((event) => controlEvents.push(event));
+    await control.request('thread/resume', { threadId: session.threadId });
 
-    office = pty.spawn(node, ['bin/session-client.js', '--ssh-config', path.join(fixtureRoot, 'office-ssh-config')], {
-      name: 'xterm-256color', cols: 100, rows: 24, cwd: packageRoot,
-      env: { ...process.env, XCODE_SSH_PATH: command, XCODE_SSH_WRAPPER: officeSshWrapper },
-      useConptyDll: true,
-    });
-    let sent = false;
-    office.onData((data) => {
-      officeOutput += data;
-      officeTerminal.write(data, updateOfficeScreen);
-      if (!sent && officeOutput.includes('OpenAI Codex') && officeOutput.includes('›')) {
-        sent = true;
-        officeTerminal.resize(148, 38);
-        office.resize(148, 38);
-        setTimeout(() => {
-          typeLikeUser(office, `Reply with exactly ${marker} and nothing else. Do not use tools.`).catch(() => {});
-        }, 500);
-      }
-    });
+    office = startOffice({ sendInitialMessage: true });
 
     await waitFor(() => mainText.includes('Working') && officeText.includes('Working'), 30_000, 'both official Codex clients to display the shared working turn');
     await waitFor(() => mainText.includes(marker), 120_000, 'the office-originated acknowledgement to render in the main official Codex TUI');
     await waitFor(() => officeText.includes(marker), 30_000, 'the same acknowledgement to render in the office official Codex TUI');
+    await waitFor(
+      () => !visibleTerminalText(mainTerminal).includes('Working') && !visibleTerminalText(officeTerminal).includes('Working'),
+      30_000,
+      'both official Codex TUIs to clear Working after the completed turn',
+    );
+
+    const interrupted = await control.request('turn/start', {
+      threadId: session.threadId,
+      input: [{ type: 'text', text: 'Use the shell tool to run Start-Sleep -Seconds 20. Do not respond before it finishes.' }],
+    });
+    const interruptedTurnId = interrupted.turn?.id || interrupted.turnId;
+    assert.ok(interruptedTurnId, 'The interrupted turn did not return a turn id.');
+    await waitFor(
+      () => visibleTerminalText(mainTerminal).includes('Working') && visibleTerminalText(officeTerminal).includes('Working'),
+      30_000,
+      'both official Codex TUIs to display the interrupted working turn',
+    );
+    await control.request('turn/interrupt', { threadId: session.threadId, turnId: interruptedTurnId });
+    await waitFor(
+      () => controlEvents.some((event) => event.method === 'turn/completed' &&
+        event.params?.threadId === session.threadId && event.params?.turn?.id === interruptedTurnId && event.params.turn.status === 'interrupted'),
+      30_000,
+      'the authoritative interrupted turn completion',
+    );
+    await waitFor(
+      () => !visibleTerminalText(mainTerminal).includes('Working') && !visibleTerminalText(officeTerminal).includes('Working'),
+      30_000,
+      'both official Codex TUIs to clear Working after the interrupted turn',
+    );
+
+    const failed = await control.request('turn/start', {
+      threadId: session.threadId,
+      model: 'xcode-no-such-model',
+      input: [{ type: 'text', text: 'Reply only with ok.' }],
+    });
+    const failedTurnId = failed.turn?.id || failed.turnId;
+    assert.ok(failedTurnId, 'The failed turn did not return a turn id.');
+    await waitFor(
+      () => controlEvents.some((event) => event.method === 'turn/completed' &&
+        event.params?.threadId === session.threadId && event.params?.turn?.id === failedTurnId && event.params.turn.status === 'failed'),
+      30_000,
+      'the authoritative failed turn completion',
+    );
+    await waitFor(
+      () => !visibleTerminalText(mainTerminal).includes('Working') && !visibleTerminalText(officeTerminal).includes('Working'),
+      30_000,
+      'both official Codex TUIs to clear Working after the failed turn',
+    );
     assert.equal(sent, true, 'The office official Codex client never accepted its local message.');
     assert.match(officeOutput, /OpenAI Codex/, 'The office side did not render the official Codex TUI.');
     assert.match(officeOutput, /›/, 'The official Codex composer was not visible on the office side.');
@@ -167,6 +242,22 @@ async function main() {
     assert.match(officeOutput, /\x1b\[\?1006l/, 'The office adapter left SGR mouse reporting enabled.');
     assert.doesNotMatch(officeOutput, /\x1b\[\?100[0236]h/, 'The office adapter captured the physical mouse wheel.');
     assert.equal(officeTerminal.buffer.active.type, 'normal', 'The official office TUI did not retain normal terminal scrollback.');
+
+    const previousOffice = office;
+    const previousOfficeExited = new Promise((resolve) => previousOffice.onExit(resolve));
+    officeGeneration += 1;
+    previousOffice.kill();
+    await Promise.race([previousOfficeExited, new Promise((resolve) => setTimeout(resolve, 2_000))]);
+    officeTerminal.dispose();
+    officeTerminal = createOfficeTerminal();
+    officeOutput = '';
+    officeText = '';
+    officeScreen = '';
+    office = startOffice();
+    await waitFor(() => officeText.includes('OpenAI Codex') && officeText.includes('›'), 30_000, 'the reconnected official office Codex TUI');
+    await wait(1_000);
+    assert.doesNotMatch(visibleTerminalText(mainTerminal), /Working/, 'A delayed main-PC terminal frame resurrected Working.');
+    assert.doesNotMatch(visibleTerminalText(officeTerminal), /Working/, 'An old terminal frame resurrected Working after the office reconnect.');
     console.log(`SEMANTIC_TWO_MACHINE_E2E=PASS package=${packageRoot}`);
   }
   catch (error) {
@@ -176,6 +267,7 @@ async function main() {
   finally {
     mainTerminal.dispose();
     officeTerminal.dispose();
+    control?.close();
     if (office) { office.kill(); }
     if (session) {
       session.stop();

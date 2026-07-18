@@ -308,6 +308,10 @@ Assert ((Get-Content -Raw $nativeCodexTerminal) -notmatch '\?1006h') 'The office
 Assert ((Get-Content -Raw $scopedAppServerRelay) -match 'DENIED_THREAD_METHODS') 'The remote device can enumerate or mutate unrelated Codex threads.'
 Assert ((Get-Content -Raw $scopedAppServerRelay) -match 'isLoopbackWebSocketUrl') 'The app-server relay is not restricted to a private main-PC endpoint.'
 Assert ((Get-Content -Raw $appServerSession) -match "'--no-alt-screen'") 'The managed native Codex TUI does not retain terminal scrollback for the office mirror.'
+& node.exe $scopedRelayHarness
+Assert ($LASTEXITCODE -eq 0) 'The selected-thread relay did not preserve authoritative Working terminal states.'
+& node.exe $nativeOfficeHarness
+Assert ($LASTEXITCODE -eq 0) 'The office native adapter did not preserve authoritative Working terminal states.'
 & node.exe $managedCodexTransportRecoveryHarness
 Assert ($LASTEXITCODE -eq 0) 'The main Codex terminal did not recover after a remote app-server transport reset.'
 & node.exe $nativeOfficeTransportRecoveryHarness

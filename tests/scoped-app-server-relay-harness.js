@@ -41,6 +41,18 @@ assert.throws(() => policy.acceptClientMessage('null'), /JSON object/i);
 assert.equal(policy.shouldForwardServerMessage(JSON.stringify({ id: 1, result: {} })), true);
 assert.equal(policy.shouldForwardServerMessage(JSON.stringify({ method: 'turn/started', params: { threadId } })), true);
 assert.equal(policy.shouldForwardServerMessage(JSON.stringify({ method: 'turn/started', params: { threadId: otherThreadId } })), false);
+for (const status of ['completed', 'interrupted', 'failed']) {
+  assert.equal(
+    policy.shouldForwardServerMessage(JSON.stringify({ method: 'turn/completed', params: { threadId, turn: { id: `turn-${status}`, status } } })),
+    true,
+    `The selected thread's ${status} terminal state was not forwarded.`,
+  );
+  assert.equal(
+    policy.shouldForwardServerMessage(JSON.stringify({ method: 'turn/completed', params: { threadId: otherThreadId, turn: { id: `turn-${status}`, status } } })),
+    false,
+    `A different thread's ${status} terminal state leaked to the office TUI.`,
+  );
+}
 assert.equal(policy.shouldForwardServerMessage(JSON.stringify({ method: 'thread/started', params: { thread: { id: threadId } } })), true);
 assert.equal(policy.shouldForwardServerMessage(JSON.stringify({ method: 'thread/name/updated', params: { threadId, threadName: 'Persistent title' } })), true);
 assert.equal(policy.shouldForwardServerMessage(JSON.stringify({ method: 'thread/started', params: { thread: { id: otherThreadId } } })), false);

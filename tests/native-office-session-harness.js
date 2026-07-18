@@ -38,6 +38,10 @@ function createFakeGateway() {
       appMessages.push(message);
       const response = JSON.stringify({ id: message.id, result: { serverInfo: { name: 'fixture' } } });
       child.stdout.write(`${JSON.stringify({ type: 'message', data: Buffer.from(response, 'utf8').toString('base64') })}\n`);
+      const started = JSON.stringify({ method: 'turn/started', params: { threadId: session.threadId, turn: { id: 'turn-failed', status: 'inProgress' } } });
+      const failed = JSON.stringify({ method: 'turn/completed', params: { threadId: session.threadId, turn: { id: 'turn-failed', status: 'failed' } } });
+      child.stdout.write(`${JSON.stringify({ type: 'message', data: Buffer.from(started, 'utf8').toString('base64') })}\n`);
+      child.stdout.write(`${JSON.stringify({ type: 'message', data: Buffer.from(failed, 'utf8').toString('base64') })}\n`);
     }
   });
   queueMicrotask(() => child.stdout.write(`${JSON.stringify({ type: 'open' })}\n`));
@@ -64,10 +68,20 @@ function spawnFakeCodex(file, args, options) {
 
   const socket = new WebSocket(args[2]);
   socket.on('open', () => socket.send(JSON.stringify({ id: 7, method: 'initialize', params: { clientInfo: { name: 'fixture-codex' } } })));
+  const received = [];
   socket.on('message', (data) => {
-    const response = JSON.parse(data.toString('utf8'));
-    assert.equal(response.id, 7);
-    socket.close();
+    const message = JSON.parse(data.toString('utf8'));
+    received.push(message);
+    if (message.id === 7) {
+      assert.equal(message.result.serverInfo.name, 'fixture');
+      return;
+    }
+    if (message.method === 'turn/completed') {
+      assert.deepEqual(received.map((event) => event.method || `response:${event.id}`), ['response:7', 'turn/started', 'turn/completed']);
+      assert.equal(message.params.threadId, session.threadId);
+      assert.equal(message.params.turn.status, 'failed');
+      socket.close();
+    }
   });
   socket.on('close', () => {
     for (const listener of exitListeners) { listener({ exitCode: 0, signal: 0 }); }
