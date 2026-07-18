@@ -248,7 +248,7 @@ Assert (Test-Path -LiteralPath $visibleWindowProbe) 'The visible-window probe is
 Assert (Test-Path -LiteralPath $roleHarness) 'The mixed-role resolution harness is missing.'
 $package = Get-Content -Raw -LiteralPath $packagePath | ConvertFrom-Json
 Assert ($package.name -eq 'xcode-remote') 'The npm package name is incorrect.'
-Assert ($package.version -eq '1.5.3') 'The native-scrollback release version is incorrect.'
+Assert ($package.version -eq '1.5.4') 'The native-scrollback release version is incorrect.'
 Assert ($package.bin.xcode -eq 'bin/xcode.js') 'npm does not expose the xcode command.'
 Assert ($package.dependencies.'@openai/codex' -eq '0.144.5') 'The two devices do not share the verified official Codex version.'
 Assert ($package.dependencies.ws -eq '8.21.1') 'The selected-thread WebSocket bridge dependency is not pinned.'
