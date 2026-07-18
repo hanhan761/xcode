@@ -55,7 +55,7 @@ function createFakeGateway({ resetAfterInitialize, receivedMethods }) {
   return child;
 }
 
-function createFakeCodexSpawner() {
+function createFakeCodexSpawner({ closeAfterResponse = (attempt) => attempt > 0 } = {}) {
   let launches = 0;
   const urls = [];
 
@@ -85,7 +85,7 @@ function createFakeCodexSpawner() {
     socket = new WebSocket(args[2]);
     socket.on('open', () => socket.send(JSON.stringify({ id: attempt + 1, method: 'initialize', params: { clientInfo: { name: 'fixture-codex' } } })));
     socket.on('message', () => {
-      if (attempt > 0) { socket.close(); }
+      if (closeAfterResponse(attempt)) { socket.close(); }
     });
     socket.on('close', () => {
       for (const listener of exitListeners) { listener({ exitCode: attempt > 0 ? 0 : 1, signal: 0 }); }
@@ -125,6 +125,33 @@ async function main() {
   assert.equal(codex.launches(), 2, 'The official Codex client was not resumed after the transport reset.');
   assert.deepEqual(receivedMethods, ['initialize', 'initialize'], 'The recovered client did not reinitialize the same app-server protocol.');
   assert.equal(new Set(codex.urls()).size, 2, 'Recovery reused a dead local relay URL instead of creating a healthy one.');
+
+  const persistentResetMethods = [];
+  let persistentGatewayAttempts = 0;
+  const persistentCodex = createFakeCodexSpawner({ closeAfterResponse: () => false });
+  await assert.rejects(
+    runNativeCodexOfficeSession({
+      session,
+      codexExecutable: 'fixture-codex.exe',
+      openGateway: () => {
+        persistentGatewayAttempts += 1;
+        return createFakeGateway({
+          resetAfterInitialize: true,
+          receivedMethods: persistentResetMethods,
+        });
+      },
+      spawnPty: persistentCodex.spawnFakeCodex,
+      terminalInput: new PassThrough(),
+      terminalOutput: new PassThrough(),
+      transportRecoveryAttempts: 2,
+      transportRecoveryDelayMs: 0,
+    }),
+    /transport reset 3 times and could not recover/i,
+    'Persistent office transport resets must stop after the configured recovery bound.',
+  );
+  assert.equal(persistentGatewayAttempts, 3, 'Persistent office transport resets must stop after the configured recovery bound.');
+  assert.equal(persistentCodex.launches(), 3, 'Persistent office transport resets must stop after the configured recovery bound.');
+  assert.deepEqual(persistentResetMethods, ['initialize', 'initialize', 'initialize'], 'Each bounded retry must reinitialize the same app-server protocol.');
   process.stdout.write('NATIVE_OFFICE_TRANSPORT_RECOVERY=PASS\n');
 }
 

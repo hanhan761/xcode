@@ -100,6 +100,36 @@ async function mainHarness() {
   assert.deepEqual(startCalls[1].args, ['resume', threadId], 'Recovery did not resume the same Codex thread.');
   assert.match(visibleOutput, /Recovering the shared Codex session/i, 'The terminal did not explain that it was recovering the shared session.');
   assert.match(visibleOutput, /RECOVERED/, 'The recovered Codex terminal output was not forwarded.');
+
+  const exhaustedInput = createTerminalInput();
+  const exhaustedOutput = createTerminalOutput();
+  let exhaustedVisibleOutput = '';
+  exhaustedOutput.on('data', (data) => { exhaustedVisibleOutput += data.toString('utf8'); });
+  const resetSession = () => createSession({
+    outputFrames: ['ERROR: remote app server transport failed: Connection reset without closing handshake\r\n'],
+    exitCode: 1,
+  });
+  const exhaustedSessions = [resetSession(), resetSession(), resetSession()];
+  const exhaustedStartCalls = [];
+  const exhaustedExitCode = await main({
+    input: exhaustedInput,
+    outputStream: exhaustedOutput,
+    args: ['resume', threadId],
+    cwd: 'C:\\work\\xcode',
+    stateRoot: 'fixture-state-root',
+    findCodex: () => 'fixture-codex.exe',
+    findActiveThread: () => null,
+    lifecycleLog() {},
+    startSession: async (options) => {
+      exhaustedStartCalls.push(options);
+      return exhaustedSessions.shift();
+    },
+    transportRecoveryAttempts: 2,
+    transportRecoveryDelayMs: 0,
+  });
+  assert.equal(exhaustedExitCode, 1, "A persistent transport reset must keep Codex's failure exit status.");
+  assert.equal(exhaustedStartCalls.length, 3, 'Persistent transport resets must stop after the configured recovery bound.');
+  assert.match(exhaustedVisibleOutput, /could not recover after 2 retry attempts/i, 'The bounded recovery failure was not explained to the user.');
   process.stdout.write('MANAGED_CODEX_TRANSPORT_RECOVERY=PASS\n');
 }
 
