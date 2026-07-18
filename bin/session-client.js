@@ -38,10 +38,22 @@ function collectOutput(child) {
   });
 }
 
-async function chooseSession(sshConfig) {
+function wait(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+async function listSessions(sshConfig) {
   const output = await collectOutput(runGateway(sshConfig, ['list'], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }));
   const response = JSON.parse(output);
-  const active = Array.isArray(response.sessions) ? response.sessions : [];
+  return Array.isArray(response.sessions) ? response.sessions : [];
+}
+
+async function listNativeSessions(sshConfig) {
+  return (await listSessions(sshConfig)).filter((session) => session.nativeTuiAvailable && typeof session.threadId === 'string');
+}
+
+async function chooseSession(sshConfig) {
+  const active = await listSessions(sshConfig);
   const sessions = active.filter((session) => session.nativeTuiAvailable && typeof session.threadId === 'string');
   if (sessions.length === 0) {
     if (active.length > 0) {
@@ -65,12 +77,28 @@ async function chooseSession(sshConfig) {
   finally { prompt.close(); }
 }
 
+async function recoverSessionByThread(sshConfig, threadId, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+  while (Date.now() <= deadline) {
+    try {
+      const recovered = (await listNativeSessions(sshConfig)).find((candidate) => candidate.threadId === threadId);
+      if (recovered) { return recovered; }
+      lastError = new Error('The recovered main-PC session is not ready yet.');
+    }
+    catch (error) { lastError = error; }
+    if (Date.now() < deadline) { await wait(250); }
+  }
+  throw new Error(`Could not rediscover the recovered Codex thread: ${lastError?.message || 'no matching managed session was published.'}`);
+}
+
 async function main() {
   const { sshConfig } = parseArgs(process.argv.slice(2));
   const session = await chooseSession(sshConfig);
   const exitCode = await runNativeCodexOfficeSession({
     session,
     openGateway: (args, options) => runGateway(sshConfig, args, options),
+    recoverSession: ({ threadId }) => recoverSessionByThread(sshConfig, threadId),
   });
   process.exitCode = exitCode;
 }

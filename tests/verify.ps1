@@ -297,6 +297,7 @@ Assert ((Get-Content -Raw $sessionGateway) -match 'probePipe') 'The gateway does
 Assert ((Get-Content -Raw $sessionGateway) -match "parts\[1\] === 'native'") 'The forced gateway does not expose the selected-thread native route.'
 Assert ((Get-Content -Raw $sessionGateway) -match 'relayScopedAppServer') 'The forced gateway does not use the selected-thread policy relay.'
 Assert ((Get-Content -Raw $sessionClient) -match 'runNativeCodexOfficeSession') 'The office client does not launch the official Codex TUI.'
+Assert ((Get-Content -Raw $sessionClient) -match 'recoverSessionByThread') 'The office client cannot rediscover a recovered managed Codex session by thread.'
 Assert ((Get-Content -Raw $nativeOfficeSession) -match "\['native', session\.sessionId\]") 'The office client does not request the selected native session capability.'
 Assert ((Get-Content -Raw $nativeOfficeSession) -match "'--no-alt-screen'") 'The office official Codex TUI does not retain normal terminal scrollback.'
 Assert ((Get-Content -Raw $nativeOfficeSession) -match 'startNativeCodexTerminal') 'The office official Codex TUI is not attached through the native terminal adapter.'

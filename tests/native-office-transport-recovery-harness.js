@@ -18,7 +18,7 @@ function gatewayFrame(frame) {
   return `${JSON.stringify(frame)}\n`;
 }
 
-function createFakeGateway({ resetAfterInitialize, receivedMethods }) {
+function createFakeGateway({ resetAfterInitialize, resetBeforeOpen = false, receivedMethods }) {
   const child = new EventEmitter();
   child.stdin = new PassThrough();
   child.stdout = new PassThrough();
@@ -51,11 +51,21 @@ function createFakeGateway({ resetAfterInitialize, receivedMethods }) {
       }
     }
   });
-  queueMicrotask(() => child.stdout.write(gatewayFrame({ type: 'open' })));
+  queueMicrotask(() => {
+    if (resetBeforeOpen) {
+      child.stdout.write(gatewayFrame({ type: 'error', message: 'Connection reset without closing handshake' }));
+      child.emit('exit', 1);
+      return;
+    }
+    child.stdout.write(gatewayFrame({ type: 'open' }));
+  });
   return child;
 }
 
-function createFakeCodexSpawner({ closeAfterResponse = (attempt) => attempt > 0 } = {}) {
+function createFakeCodexSpawner({
+  closeAfterResponse = (attempt) => attempt > 0,
+  closeExitCode = (attempt) => attempt > 0 ? 0 : 1,
+} = {}) {
   let launches = 0;
   const urls = [];
 
@@ -88,7 +98,7 @@ function createFakeCodexSpawner({ closeAfterResponse = (attempt) => attempt > 0 
       if (closeAfterResponse(attempt)) { socket.close(); }
     });
     socket.on('close', () => {
-      for (const listener of exitListeners) { listener({ exitCode: attempt > 0 ? 0 : 1, signal: 0 }); }
+      for (const listener of exitListeners) { listener({ exitCode: closeExitCode(attempt), signal: 0 }); }
     });
     socket.on('error', () => {
       for (const listener of exitListeners) { listener({ exitCode: 1, signal: 0 }); }
@@ -152,6 +162,51 @@ async function main() {
   assert.equal(persistentGatewayAttempts, 3, 'Persistent office transport resets must stop after the configured recovery bound.');
   assert.equal(persistentCodex.launches(), 3, 'Persistent office transport resets must stop after the configured recovery bound.');
   assert.deepEqual(persistentResetMethods, ['initialize', 'initialize', 'initialize'], 'Each bounded retry must reinitialize the same app-server protocol.');
+
+  const refreshedSession = { ...session, sessionId: '33333333-3333-4333-8333-333333333333' };
+  const recoveryGatewayArguments = [];
+  const recoveryCodex = createFakeCodexSpawner();
+  let recoveryGatewayAttempts = 0;
+  const recoveredExitCode = await runNativeCodexOfficeSession({
+    session,
+    codexExecutable: 'fixture-codex.exe',
+    openGateway: (args) => {
+      recoveryGatewayArguments.push(args);
+      assert.equal(args[1], recoveryGatewayAttempts++ === 0 ? session.sessionId : refreshedSession.sessionId, 'Recovery must request the replacement managed-session capability.');
+      return createFakeGateway({
+        resetAfterInitialize: recoveryGatewayArguments.length === 1,
+        receivedMethods: [],
+      });
+    },
+    recoverSession: async ({ threadId }) => {
+      assert.equal(threadId, session.threadId, 'Recovery must rediscover the same Codex thread.');
+      return refreshedSession;
+    },
+    spawnPty: recoveryCodex.spawnFakeCodex,
+    terminalInput: new PassThrough(),
+    terminalOutput: new PassThrough(),
+    transportRecoveryDelayMs: 0,
+  });
+  assert.equal(recoveredExitCode, 0, 'The office terminal did not reconnect through the replacement session capability.');
+  assert.deepEqual(recoveryGatewayArguments.map((args) => args[1]), [session.sessionId, refreshedSession.sessionId], 'Recovery did not switch to the replacement session id.');
+
+  let preOpenGatewayAttempts = 0;
+  const preOpenCodex = createFakeCodexSpawner({ closeAfterResponse: () => true, closeExitCode: () => 0 });
+  const preOpenExitCode = await runNativeCodexOfficeSession({
+    session,
+    codexExecutable: 'fixture-codex.exe',
+    openGateway: () => createFakeGateway({
+      resetBeforeOpen: preOpenGatewayAttempts++ === 0,
+      receivedMethods: [],
+    }),
+    spawnPty: preOpenCodex.spawnFakeCodex,
+    terminalInput: new PassThrough(),
+    terminalOutput: new PassThrough(),
+    transportRecoveryDelayMs: 0,
+  });
+  assert.equal(preOpenExitCode, 0, 'A transport reset before the gateway opens must recover.');
+  assert.equal(preOpenGatewayAttempts, 2, 'A transport reset before the gateway opens did not start a retry.');
+  assert.equal(preOpenCodex.launches(), 1, 'Codex must start only after the recovered gateway opens.');
   process.stdout.write('NATIVE_OFFICE_TRANSPORT_RECOVERY=PASS\n');
 }
 
