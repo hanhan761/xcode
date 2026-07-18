@@ -200,6 +200,7 @@ $visibleWindowProbe = Join-Path $root 'tests\visible-child-window-probe.ps1'
 $roleHarness = Join-Path $root 'tests\role-resolution-harness.ps1'
 $codexInstallationHarness = Join-Path $root 'tests\codex-installation-harness.js'
 $codexUpdateGuardHarness = Join-Path $root 'tests\codex-update-session-guard-harness.ps1'
+$codexUpdateInstallationRootHarness = Join-Path $root 'tests\codex-update-installation-root-harness.ps1'
 Assert (Test-Path -LiteralPath $dispatcher) 'The unified xcode dispatcher is missing.'
 Assert (Test-Path -LiteralPath $packagePath) 'The npm package manifest is missing.'
 Assert (Test-Path -LiteralPath $nodeLauncher) 'The npm xcode binary is missing.'
@@ -218,6 +219,7 @@ Assert (Test-Path -LiteralPath $terminalOutputSink) 'The managed-terminal output
 Assert (Test-Path -LiteralPath $terminalOutputCoalescer) 'The managed-terminal output coalescer is missing.'
 Assert (Test-Path -LiteralPath $codexExecutable) 'The pinned native Codex resolver is missing.'
 Assert (Test-Path -LiteralPath $codexInstallationReporter) 'The official Codex installation reporter is missing.'
+Assert (Test-Path -LiteralPath $codexUpdateInstallationRootHarness) 'The xcode update installation-root harness is missing.'
 Assert (Test-Path -LiteralPath $scopedAppServerRelay) 'The selected-thread app-server relay is missing.'
 Assert (Test-Path -LiteralPath $nativeOfficeSession) 'The office native Codex adapter is missing.'
 Assert (Test-Path -LiteralPath $nativeCodexTerminal) 'The office native Codex terminal adapter is missing.'
@@ -330,6 +332,8 @@ Assert ($LASTEXITCODE -eq 0) 'The office Codex terminal did not recover after a 
 Assert ($LASTEXITCODE -eq 0) 'The official Codex installation could not be resolved and version-verified.'
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $codexUpdateGuardHarness -RepositoryRoot $root
 Assert ($LASTEXITCODE -eq 0) 'xcode update did not protect active main or office native Codex sessions.'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $codexUpdateInstallationRootHarness -RepositoryRoot $root
+Assert ($LASTEXITCODE -eq 0) 'xcode update did not verify the global package it installed.'
 $nodeHelpText = (& node.exe $nodeLauncher help | Out-String)
 Assert ($LASTEXITCODE -eq 0 -and $nodeHelpText -match 'xcode office') 'The npm xcode binary cannot launch the dispatcher.'
 Assert ((Get-Content -Raw (Join-Path $root 'xcode.cmd')) -match 'bin\\xcode\.js') 'The repository xcode bootstrap does not use the safe npm launcher.'

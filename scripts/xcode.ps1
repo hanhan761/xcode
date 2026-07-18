@@ -114,9 +114,11 @@ function Get-XcodeActiveManagedSessionProcesses {
 }
 
 function Get-XcodeReleaseInstallation {
+    param([string]$InstallationRoot = $RepositoryRoot)
+
     $node = Get-Command node.exe -ErrorAction SilentlyContinue
     if (-not $node) { throw 'Node.js is unavailable. Reinstall xcode with npm, then open a new PowerShell window.' }
-    $reporter = Join-Path $RepositoryRoot 'bin\codex-installation.js'
+    $reporter = Join-Path $InstallationRoot 'bin\codex-installation.js'
     if (-not (Test-Path -LiteralPath $reporter -PathType Leaf)) { throw 'The Codex installation verifier is missing. Run xcode update.' }
 
     $previousErrorActionPreference = $ErrorActionPreference
@@ -143,11 +145,33 @@ function Get-XcodeReleaseInstallation {
 }
 
 function Write-XcodeReleaseStatus {
-    $report = Get-XcodeReleaseInstallation
+    param([string]$InstallationRoot = $RepositoryRoot)
+
+    $report = Get-XcodeReleaseInstallation -InstallationRoot $InstallationRoot
     Write-Host "xcode version : $($report.xcodeVersion)"
     Write-Host "Codex version : $($report.codex.version)"
     Write-Host "Codex source  : $($report.codex.source)"
     return $report
+}
+
+function Get-XcodeGlobalPackageRoot {
+    param([Parameter(Mandatory = $true)]$Npm)
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = (& $Npm.Source root --global | Out-String)
+        $exitCode = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $previousErrorActionPreference }
+    if ($exitCode -ne 0 -or -not $output.Trim()) {
+        throw 'npm could not locate the globally installed xcode release after updating it.'
+    }
+    $packageRoot = Join-Path $output.Trim() 'xcode-remote'
+    if (-not (Test-Path -LiteralPath $packageRoot -PathType Container)) {
+        throw 'npm updated xcode but its global xcode-remote package directory is unavailable.'
+    }
+    return (Resolve-Path -LiteralPath $packageRoot).Path
 }
 
 function Update-XcodePackage {
@@ -167,7 +191,8 @@ function Update-XcodePackage {
     # Versions before the npm package placed a WezTerm-only xcode.cmd in this
     # directory. It can shadow the npm command in older user PATHs.
     Remove-XcodePathEntry -Directory (Join-Path $env:LOCALAPPDATA 'XcodeRemote\bin')
-    $report = Write-XcodeReleaseStatus
+    $updatedReleaseRoot = Get-XcodeGlobalPackageRoot -Npm $npm
+    $report = Write-XcodeReleaseStatus -InstallationRoot $updatedReleaseRoot
     Write-Host "xcode is updated with verified Codex $($report.codex.version) ($($report.codex.source)). The legacy local launcher was removed from your PATH; open a new PowerShell window before your next xcode command." -ForegroundColor Green
 }
 
