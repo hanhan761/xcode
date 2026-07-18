@@ -35,7 +35,7 @@ async function main() {
   });
 
   const sink = createTerminalOutputSink(output);
-  const terminalOutput = createTerminalTitleFilter((data) => sink.write(data));
+  const terminalOutput = createTerminalTitleFilter((data) => sink.write(data), 'Shared conversation');
   terminalOutput.write('\x1b]0;upstream transient title');
   terminalOutput.write('\x07');
   terminalOutput.write('\x1b]9;Codex turn complete\x07\x07');
@@ -44,7 +44,8 @@ async function main() {
   terminalOutput.flush();
 
   await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.doesNotMatch(rawOutput, /upstream transient title/, 'An upstream title override replaced the persisted xcode title.');
+  assert.match(rawOutput, /\x1b\]0;upstream transient title — Shared conversation\x07/, 'The upstream working title was not combined with the persisted conversation title.');
+  assert.doesNotMatch(rawOutput, /\x1b\]0;upstream transient title\x07/, 'The upstream working title bypassed the persisted conversation title.');
   assert.match(rawOutput, /\x1b\]9;Codex turn complete\x07/, 'The official terminal notification was dropped.');
   assert.match(rawOutput, /⠋ Working/, 'The official working spinner frame was dropped.');
   assert.ok(terminal.buffer.normal.baseY > 0, 'The main terminal did not retain native normal-buffer scrollback.');

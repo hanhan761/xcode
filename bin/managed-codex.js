@@ -6,7 +6,7 @@ const path = require('node:path');
 const { startSharedAppServerSession } = require('../lib/app-server-session');
 const { findNativeCodex } = require('../lib/codex-executable');
 const { createTerminalOutputSink } = require('../lib/terminal-output-sink');
-const { createTerminalTitleFilter, terminalTitleSequence } = require('../lib/session-title');
+const { createTerminalTitleFilter } = require('../lib/session-title');
 
 const DISABLE_MOUSE_REPORTING = '\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l';
 
@@ -101,9 +101,10 @@ async function main() {
     process.exitCode = 1;
     session.stop();
   });
-  const terminalOutput = createTerminalTitleFilter((data) => output.write(data));
+  const terminalOutput = createTerminalTitleFilter((data) => output.write(data), session.title);
   output.write(DISABLE_MOUSE_REPORTING);
-  const unsubscribeTitle = session.onTitle((title) => output.write(terminalTitleSequence(title)));
+  terminalOutput.setSessionTitle(session.title);
+  const unsubscribeTitle = session.onTitle((title) => terminalOutput.setSessionTitle(title));
   session.onOutput((data) => terminalOutput.write(data));
   const resize = () => {
     try {

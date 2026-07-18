@@ -135,6 +135,30 @@ async function main() {
     500,
     'the persistent office title to win after a split official title update',
   );
+  gateway.sendAppMessage({
+    method: 'thread/name/updated',
+    params: { threadId: session.threadId, threadName: 'Shared conversation' },
+  });
+  await waitFor(() => visibleOutput.includes('\x1b]0;official-child-title — Shared conversation\x07'), 500, 'the renamed session title to remain attached to the current official title frame');
+  const animatedTitleStart = visibleOutput.length;
+  fakePty.emitData('\x1b]0;\u280b xcode');
+  assert.equal(
+    visibleOutput.slice(animatedTitleStart).includes('\x1b]0;\u280b xcode — Shared conversation\x07'),
+    false,
+    'The adapter emitted a completed animated title before the official frame completed.',
+  );
+  fakePty.emitData('\x07\x1b]0;\u2819 xcode\x07');
+  await waitFor(
+    () => visibleOutput.includes('\x1b]0;\u280b xcode — Shared conversation\x07')
+      && visibleOutput.includes('\x1b]0;\u2819 xcode — Shared conversation\x07'),
+    500,
+    'the office tab to receive every animated title frame with the shared conversation title',
+  );
+  assert.doesNotMatch(
+    visibleOutput.slice(animatedTitleStart),
+    /\x1b\]0;\u280b xcode\x07|\x1b\]0;\u2819 xcode\x07/,
+    'The office adapter let an undecorated official title replace the shared conversation title.',
+  );
   assert.match(visibleOutput, /\x1b\[\?1000l/);
   assert.match(visibleOutput, /\x1b\[\?1006l/);
   assert.doesNotMatch(visibleOutput, /\x1b\[\?100[0236]h/, 'The office adapter captured the host terminal mouse wheel.');
