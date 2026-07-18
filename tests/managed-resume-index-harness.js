@@ -57,6 +57,11 @@ async function main() {
     assert.deepEqual(index.list(projectA).map((entry) => entry.threadId), [threadA], 'A malformed or stale workspace record leaked into the current resume list.');
     assert.deepEqual(index.list(projectB), [], 'A deleted workspace was still offered for resume.');
 
+    const nonWorkspace = path.join(root, 'not-a-directory');
+    fs.writeFileSync(nonWorkspace, 'not a workspace', 'utf8');
+    index.record({ threadId: '33333333-3333-4333-8333-333333333333', cwd: nonWorkspace, title: 'Invalid workspace' });
+    assert.deepEqual(index.list(nonWorkspace), [], 'A resume record pointing to a file was offered as a workspace.');
+
     process.stdout.write('MANAGED_RESUME_INDEX=PASS\n');
   }
   finally {
