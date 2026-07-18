@@ -213,6 +213,25 @@ async function main() {
       30_000,
       'both official Codex TUIs to clear Working after the interrupted turn',
     );
+
+    const failed = await control.request('turn/start', {
+      threadId: session.threadId,
+      model: 'xcode-no-such-model',
+      input: [{ type: 'text', text: 'Reply only with ok.' }],
+    });
+    const failedTurnId = failed.turn?.id || failed.turnId;
+    assert.ok(failedTurnId, 'The failed turn did not return a turn id.');
+    await waitFor(
+      () => controlEvents.some((event) => event.method === 'turn/completed' &&
+        event.params?.threadId === session.threadId && event.params?.turn?.id === failedTurnId && event.params.turn.status === 'failed'),
+      30_000,
+      'the authoritative failed turn completion',
+    );
+    await waitFor(
+      () => !visibleTerminalText(mainTerminal).includes('Working') && !visibleTerminalText(officeTerminal).includes('Working'),
+      30_000,
+      'both official Codex TUIs to clear Working after the failed turn',
+    );
     assert.equal(sent, true, 'The office official Codex client never accepted its local message.');
     assert.match(officeOutput, /OpenAI Codex/, 'The office side did not render the official Codex TUI.');
     assert.match(officeOutput, /›/, 'The official Codex composer was not visible on the office side.');
@@ -237,6 +256,7 @@ async function main() {
     office = startOffice();
     await waitFor(() => officeText.includes('OpenAI Codex') && officeText.includes('›'), 30_000, 'the reconnected official office Codex TUI');
     await wait(1_000);
+    assert.doesNotMatch(visibleTerminalText(mainTerminal), /Working/, 'A delayed main-PC terminal frame resurrected Working.');
     assert.doesNotMatch(visibleTerminalText(officeTerminal), /Working/, 'An old terminal frame resurrected Working after the office reconnect.');
     console.log(`SEMANTIC_TWO_MACHINE_E2E=PASS package=${packageRoot}`);
   }
