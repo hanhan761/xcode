@@ -2,6 +2,8 @@
 
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { PassThrough } = require('node:stream');
 const { WebSocket } = require('ws');
@@ -11,8 +13,11 @@ const { runNativeCodexOfficeSession } = require(path.join(packageRoot, 'lib', 'n
 const session = {
   sessionId: '11111111-1111-4111-8111-111111111111',
   threadId: '22222222-2222-4222-8222-222222222222',
+  model: 'gpt-5.4',
+  serviceTier: null,
 };
 const appMessages = [];
+let officeConfigFixture = '';
 
 function createFakeGateway() {
   const child = new EventEmitter();
@@ -50,8 +55,14 @@ function createFakeGateway() {
 
 function spawnFakeCodex(file, args, options) {
   assert.equal(file, 'fixture-codex.exe');
-  assert.deepEqual(args.slice(0, 2), ['resume', '--remote']);
-  assert.deepEqual(args.slice(3), ['--no-alt-screen', session.threadId]);
+  assert.equal(
+    fs.readFileSync(path.join(options.env.CODEX_HOME, 'config.toml'), 'utf8'),
+    officeConfigFixture,
+    'The fixture must represent an office machine whose local defaults conflict with the main-PC policy.',
+  );
+  assert.deepEqual(args.slice(0, 5), ['resume', '--model', session.model, '--config', `service_tier="${session.serviceTier || 'default'}"`]);
+  assert.equal(args[5], '--remote');
+  assert.deepEqual(args.slice(7), ['--no-alt-screen', session.threadId]);
   assert.equal(options.cols, 120);
   assert.equal(options.rows, 36);
   assert.equal(options.useConptyDll, true);
@@ -66,7 +77,7 @@ function spawnFakeCodex(file, args, options) {
     onExit(listener) { exitListeners.add(listener); return { dispose: () => exitListeners.delete(listener) }; },
   };
 
-  const socket = new WebSocket(args[2]);
+  const socket = new WebSocket(args[args.indexOf('--remote') + 1]);
   socket.on('open', () => socket.send(JSON.stringify({ id: 7, method: 'initialize', params: { clientInfo: { name: 'fixture-codex' } } })));
   const received = [];
   socket.on('message', (data) => {
@@ -93,27 +104,47 @@ function spawnFakeCodex(file, args, options) {
 }
 
 async function main() {
-  let gatewayArgs;
-  let gatewayOptions;
-  const exitCode = await runNativeCodexOfficeSession({
-    session,
-    codexExecutable: 'fixture-codex.exe',
-    openGateway(args, options) {
-      gatewayArgs = args;
-      gatewayOptions = options;
-      return createFakeGateway();
-    },
-    spawnPty: spawnFakeCodex,
-    terminalInput: new PassThrough(),
-    terminalOutput: new PassThrough(),
-  });
-  assert.equal(exitCode, 0);
-  assert.deepEqual(gatewayArgs, ['native', session.sessionId]);
-  assert.deepEqual(gatewayOptions.stdio, ['pipe', 'pipe', 'pipe']);
-  assert.equal(gatewayOptions.windowsHide, true);
-  assert.equal(appMessages.length, 1);
-  assert.equal(appMessages[0].method, 'initialize');
-  process.stdout.write('NATIVE_OFFICE_SESSION=PASS\n');
+  const officeCodexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'xcode-office-fast-config-'));
+  try {
+    async function runOfficeSession() {
+      let gatewayArgs;
+      let gatewayOptions;
+      const exitCode = await runNativeCodexOfficeSession({
+        session,
+        codexExecutable: 'fixture-codex.exe',
+        env: { ...process.env, CODEX_HOME: officeCodexHome },
+        openGateway(args, options) {
+          gatewayArgs = args;
+          gatewayOptions = options;
+          return createFakeGateway();
+        },
+        spawnPty: spawnFakeCodex,
+        terminalInput: new PassThrough(),
+        terminalOutput: new PassThrough(),
+      });
+      assert.equal(exitCode, 0);
+      assert.deepEqual(gatewayArgs, ['native', session.sessionId]);
+      assert.deepEqual(gatewayOptions.stdio, ['pipe', 'pipe', 'pipe']);
+      assert.equal(gatewayOptions.windowsHide, true);
+    }
+
+    officeConfigFixture = 'model = "gpt-5.6-terra"\nservice_tier = "fast"\n';
+    fs.writeFileSync(path.join(officeCodexHome, 'config.toml'), officeConfigFixture);
+    await runOfficeSession();
+
+    session.model = 'gpt-5.6';
+    session.serviceTier = 'fast';
+    officeConfigFixture = 'model = "gpt-5.4"\nservice_tier = "default"\n';
+    fs.writeFileSync(path.join(officeCodexHome, 'config.toml'), officeConfigFixture);
+    await runOfficeSession();
+
+    assert.equal(appMessages.length, 2);
+    assert.ok(appMessages.every((message) => message.method === 'initialize'));
+    process.stdout.write('NATIVE_OFFICE_SESSION=PASS\n');
+  }
+  finally {
+    fs.rmSync(officeCodexHome, { recursive: true, force: true });
+  }
 }
 
 main().catch((error) => {

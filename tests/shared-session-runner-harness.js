@@ -55,6 +55,8 @@ async function main() {
     assert.equal(session.title, path.basename(workspace), 'A new conversation did not default to its workspace folder title.');
     const activeState = JSON.parse(fs.readFileSync(path.join(stateRoot, `${session.sessionId}.json`), 'utf8'));
     assert.equal(activeState.title, session.title, 'The active-session capability did not publish the main tab title.');
+    assert.equal(activeState.model, session.model, 'The active-session capability did not publish the effective Codex model.');
+    assert.equal(activeState.serviceTier, session.serviceTier, 'The active-session capability did not publish the effective Codex service tier.');
     const protocolEvents = [];
     observer = await new AppServerClient(activeState.appServerUrl, 'xcode-title-observer').connect();
     observer.onNotification((event) => protocolEvents.push(event));
@@ -90,6 +92,8 @@ async function main() {
     assert.equal(session.title, renamedTitle, 'The official renamed title did not survive a full app-server restart and resume.');
     const resumedState = JSON.parse(fs.readFileSync(path.join(stateRoot, `${session.sessionId}.json`), 'utf8'));
     assert.equal(resumedState.title, renamedTitle, 'The resumed active-session capability did not republish the persisted title.');
+    assert.equal(resumedState.model, session.model, 'The resumed session did not republish the effective Codex model.');
+    assert.equal(resumedState.serviceTier, session.serviceTier, 'The resumed session did not republish the effective Codex service tier.');
     console.log('SHARED_SESSION_RUNNER=PASS');
   }
   finally {

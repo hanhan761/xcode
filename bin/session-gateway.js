@@ -69,6 +69,9 @@ async function listSessions() {
           sessionId: state.sessionId,
           cwd: state.cwd,
           title: typeof state.title === 'string' && state.title ? state.title : null,
+          ...(typeof state.model === 'string' && state.model
+            ? { model: state.model, serviceTier: typeof state.serviceTier === 'string' ? state.serviceTier : null }
+            : {}),
           createdAt: state.createdAt,
           threadId: typeof state.threadId === 'string' ? state.threadId : null,
           nativeTuiAvailable: typeof state.threadId === 'string' && isLoopbackWebSocketUrl(state.appServerUrl),
@@ -118,6 +121,9 @@ async function native(sessionId) {
   await relayScopedAppServer({
     url: state.appServerUrl,
     threadId: state.threadId,
+    sharedSessionPolicy: typeof state.model === 'string' && state.model
+      ? { model: state.model, serviceTier: typeof state.serviceTier === 'string' ? state.serviceTier : null }
+      : null,
     input: process.stdin,
     output: process.stdout,
     errorOutput: process.stderr,
