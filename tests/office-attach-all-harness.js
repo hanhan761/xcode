@@ -33,6 +33,12 @@ async function main() {
     assert.throws(() => registry.acquireAllLock(), /already in progress/);
     firstLock.release();
     registry.acquireAllLock().release();
+    const staleLock = registry.acquireAllLock();
+    now += 101;
+    const replacementLock = registry.acquireAllLock();
+    staleLock.release();
+    assert.throws(() => registry.acquireAllLock(), /already in progress/, 'A stale lock holder removed a newer attach-all lock.');
+    replacementLock.release();
     alive.delete(process.pid);
 
     const launched = [];
