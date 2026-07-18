@@ -199,6 +199,7 @@ $transientWindowProbeHarness = Join-Path $root 'tests\transient-window-event-pro
 $visibleWindowProbe = Join-Path $root 'tests\visible-child-window-probe.ps1'
 $roleHarness = Join-Path $root 'tests\role-resolution-harness.ps1'
 $codexInstallationHarness = Join-Path $root 'tests\codex-installation-harness.js'
+$codexUpdateGuardHarness = Join-Path $root 'tests\codex-update-session-guard-harness.ps1'
 Assert (Test-Path -LiteralPath $dispatcher) 'The unified xcode dispatcher is missing.'
 Assert (Test-Path -LiteralPath $packagePath) 'The npm package manifest is missing.'
 Assert (Test-Path -LiteralPath $nodeLauncher) 'The npm xcode binary is missing.'
@@ -250,6 +251,7 @@ Assert (Test-Path -LiteralPath $transientWindowProbeHarness) 'The transient-wind
 Assert (Test-Path -LiteralPath $visibleWindowProbe) 'The visible-window probe is missing.'
 Assert (Test-Path -LiteralPath $roleHarness) 'The mixed-role resolution harness is missing.'
 Assert (Test-Path -LiteralPath $codexInstallationHarness) 'The official Codex installation harness is missing.'
+Assert (Test-Path -LiteralPath $codexUpdateGuardHarness) 'The active Codex-session update guard harness is missing.'
 $package = Get-Content -Raw -LiteralPath $packagePath | ConvertFrom-Json
 Assert ($package.name -eq 'xcode-remote') 'The npm package name is incorrect.'
 Assert ($package.version -eq '1.5.4') 'The native-scrollback release version is incorrect.'
@@ -326,6 +328,8 @@ Assert ($LASTEXITCODE -eq 0) 'The main Codex terminal did not recover after a re
 Assert ($LASTEXITCODE -eq 0) 'The office Codex terminal did not recover after a remote app-server transport reset.'
 & node.exe $codexInstallationHarness
 Assert ($LASTEXITCODE -eq 0) 'The official Codex installation could not be resolved and version-verified.'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $codexUpdateGuardHarness -RepositoryRoot $root
+Assert ($LASTEXITCODE -eq 0) 'xcode update did not protect active main or office native Codex sessions.'
 $nodeHelpText = (& node.exe $nodeLauncher help | Out-String)
 Assert ($LASTEXITCODE -eq 0 -and $nodeHelpText -match 'xcode office') 'The npm xcode binary cannot launch the dispatcher.'
 Assert ((Get-Content -Raw (Join-Path $root 'xcode.cmd')) -match 'bin\\xcode\.js') 'The repository xcode bootstrap does not use the safe npm launcher.'

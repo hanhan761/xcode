@@ -100,7 +100,7 @@ function Get-XcodeActiveManagedSessionProcesses {
             Get-CimInstance Win32_Process -ErrorAction Stop |
                 Where-Object {
                     $_.Name -ieq 'node.exe' -and
-                    [string]$_.CommandLine -match '(?i)xcode-remote[\\/]bin[\\/]managed-codex\.js'
+                    [string]$_.CommandLine -match '(?i)xcode-remote[\\/]bin[\\/](?:managed-codex|session-client)\.js'
                 } |
                 ForEach-Object {
                     [pscustomobject]@{
@@ -154,7 +154,7 @@ function Update-XcodePackage {
     $activeManagedSessions = @(Get-XcodeActiveManagedSessionProcesses)
     if ($activeManagedSessions.Count -gt 0) {
         $processIds = ($activeManagedSessions.ProcessId -join ', ')
-        throw "xcode update is paused because $($activeManagedSessions.Count) managed Codex session(s) are active (Node PID: $processIds). Save them if needed, close their terminal tabs so managed-codex.js exits, then rerun xcode update. Windows cannot replace node-pty while those sessions are open."
+        throw "xcode update is paused because $($activeManagedSessions.Count) xcode-managed Codex session(s) are active (Node PID: $processIds). Save them if needed, close their terminal tabs so the local xcode session exits, then rerun xcode update. Windows cannot replace node-pty while those sessions are open."
     }
 
     $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
