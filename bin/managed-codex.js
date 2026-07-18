@@ -6,8 +6,9 @@ const path = require('node:path');
 const { startSharedAppServerSession } = require('../lib/app-server-session');
 const { findNativeCodex } = require('../lib/codex-executable');
 const { createTerminalOutputSink } = require('../lib/terminal-output-sink');
-const { createTerminalOutputCoalescer } = require('../lib/terminal-output-coalescer');
-const { terminalTitleSequence } = require('../lib/session-title');
+const { createTerminalTitleFilter, terminalTitleSequence } = require('../lib/session-title');
+
+const DISABLE_MOUSE_REPORTING = '\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l';
 
 function restoreTerminal(rawMode) {
   if (process.stdin.isTTY && rawMode) { process.stdin.setRawMode(false); }
@@ -100,14 +101,14 @@ async function main() {
     process.exitCode = 1;
     session.stop();
   });
-  const terminalOutput = createTerminalOutputCoalescer((data) => output.write(data), initialSize);
+  const terminalOutput = createTerminalTitleFilter((data) => output.write(data));
+  output.write(DISABLE_MOUSE_REPORTING);
   const unsubscribeTitle = session.onTitle((title) => output.write(terminalTitleSequence(title)));
   session.onOutput((data) => terminalOutput.write(data));
   const resize = () => {
     try {
       const dimensions = terminalDimensions();
       session.resize(dimensions.cols, dimensions.rows);
-      terminalOutput.resize(dimensions.cols, dimensions.rows);
     }
     catch { /* The terminal is closing or the managed TUI already exited. */ }
   };
@@ -119,7 +120,8 @@ async function main() {
   const result = await session.completed;
   unsubscribeTitle();
   process.stdout.off('resize', resize);
-  await terminalOutput.close();
+  terminalOutput.flush();
+  output.write(DISABLE_MOUSE_REPORTING);
   output.close();
   restoreTerminal(true);
   appendLifecycleLog('stopped', { sessionId: session.sessionId, threadId: session.threadId, exitCode: result.exitCode, signal: result.signal });

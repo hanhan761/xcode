@@ -64,7 +64,17 @@ async function main() {
   let office;
   let mainOutput = '';
   let officeOutput = '';
+  let mainText = '';
+  let officeText = '';
   let officeScreen = '';
+  const mainTerminal = new Terminal({
+    cols: 120,
+    rows: 36,
+    scrollback: 500,
+    allowProposedApi: true,
+    convertEol: false,
+    logLevel: 'off',
+  });
   const officeTerminal = new Terminal({
     cols: 100,
     rows: 24,
@@ -74,10 +84,17 @@ async function main() {
     logLevel: 'off',
   });
 
+  function terminalText(terminal) {
+    const buffer = terminal.buffer.active;
+    return Array.from({ length: buffer.length }, (_, index) =>
+      buffer.getLine(index)?.translateToString(true) || '').join('\n');
+  }
+
   function updateOfficeScreen() {
     const buffer = officeTerminal.buffer.active;
     officeScreen = Array.from({ length: officeTerminal.rows }, (_, index) =>
       buffer.getLine(buffer.viewportY + index)?.translateToString(true) || '').join('\n');
+    officeText = terminalText(officeTerminal);
   }
 
   fs.writeFileSync(officeSshWrapper, [
@@ -112,7 +129,10 @@ async function main() {
 
   try {
     session = await startSharedAppServerSession({ file: codex, cwd: workspace, stateRoot });
-    session.onOutput((data) => { mainOutput += data; });
+    session.onOutput((data) => {
+      mainOutput += data;
+      mainTerminal.write(data, () => { mainText = terminalText(mainTerminal); });
+    });
     await waitFor(() => isSessionReady(path.join(stateRoot, `${session.sessionId}.json`)), 10_000, 'the semantic main-session gateway to become ready');
 
     office = pty.spawn(node, ['bin/session-client.js', '--ssh-config', path.join(fixtureRoot, 'office-ssh-config')], {
@@ -134,9 +154,9 @@ async function main() {
       }
     });
 
-    await waitFor(() => mainOutput.includes('Working') && officeOutput.includes('Working'), 30_000, 'both official Codex clients to display the shared working turn');
-    await waitFor(() => mainOutput.includes(marker), 120_000, 'the office-originated acknowledgement to render in the main official Codex TUI');
-    await waitFor(() => officeOutput.includes(marker), 30_000, 'the same acknowledgement to render in the office official Codex TUI');
+    await waitFor(() => mainText.includes('Working') && officeText.includes('Working'), 30_000, 'both official Codex clients to display the shared working turn');
+    await waitFor(() => mainText.includes(marker), 120_000, 'the office-originated acknowledgement to render in the main official Codex TUI');
+    await waitFor(() => officeText.includes(marker), 30_000, 'the same acknowledgement to render in the office official Codex TUI');
     assert.equal(sent, true, 'The office official Codex client never accepted its local message.');
     assert.match(officeOutput, /OpenAI Codex/, 'The office side did not render the official Codex TUI.');
     assert.match(officeOutput, /›/, 'The official Codex composer was not visible on the office side.');
@@ -154,6 +174,7 @@ async function main() {
     throw error;
   }
   finally {
+    mainTerminal.dispose();
     officeTerminal.dispose();
     if (office) { office.kill(); }
     if (session) {
