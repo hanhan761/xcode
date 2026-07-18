@@ -19,11 +19,18 @@ function writeCodex(root, packageName = 'codex-win32-x64') {
   return executable;
 }
 
+function writeReleaseCodexManifest(root, version = '0.0.0-test') {
+  const manifest = path.join(root, 'node_modules', '@openai', 'codex', 'package.json');
+  fs.mkdirSync(path.dirname(manifest), { recursive: true });
+  fs.writeFileSync(manifest, JSON.stringify({ name: '@openai/codex', version }));
+}
+
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xcode-codex-installation-'));
 try {
   const releaseRoot = path.join(fixtureRoot, 'release');
   const appData = path.join(fixtureRoot, 'appdata');
   const releaseExecutable = writeCodex(releaseRoot);
+  writeReleaseCodexManifest(releaseRoot);
   const globalExecutable = writeCodex(path.join(appData, 'npm', 'node_modules', '@openai', 'codex'));
 
   const release = resolveCodexExecutable({ env: { APPDATA: appData }, packageRoot: releaseRoot });
@@ -50,7 +57,21 @@ try {
       return 'codex 0.0.0-test';
     },
   });
-  assert.deepEqual(installation, { source: 'release-payload', version: 'codex 0.0.0-test' });
+  assert.deepEqual(installation, {
+    source: 'release-payload',
+    packageVersion: '0.0.0-test',
+    version: 'codex 0.0.0-test',
+  });
+
+  assert.throws(
+    () => inspectCodexInstallation({
+      env: { APPDATA: appData },
+      packageRoot: releaseRoot,
+      probeVersion: () => 'codex 9.9.9',
+    }),
+    /does not match the release payload version/i,
+    'A different Codex binary must not be reported as the release-pinned payload.',
+  );
 
   const reporter = path.join(packageRoot, 'bin', 'codex-installation.js');
   const reportProcess = spawnSync(process.execPath, [reporter, '--json'], { encoding: 'utf8' });
@@ -58,6 +79,7 @@ try {
   const report = JSON.parse(reportProcess.stdout);
   assert.equal(report.xcodeVersion, require(path.join(packageRoot, 'package.json')).version);
   assert.equal(report.codex.source, 'release-payload');
+  assert.equal(report.codex.packageVersion, require(path.join(packageRoot, 'node_modules', '@openai', 'codex', 'package.json')).version);
   assert.match(report.codex.version, /\S/);
 
   assert.throws(
