@@ -5,7 +5,7 @@ const path = require('node:path');
 const { PassThrough } = require('node:stream');
 
 const packageRoot = path.resolve(__dirname, '..');
-const { main } = require(path.join(packageRoot, 'bin', 'managed-codex'));
+const { chooseWorkspaceResume, main } = require(path.join(packageRoot, 'bin', 'managed-codex'));
 
 const currentThread = '11111111-1111-4111-8111-111111111111';
 const otherThread = '22222222-2222-4222-8222-222222222222';
@@ -62,6 +62,22 @@ async function mainHarness() {
     title: 'Current project conversation',
     updatedAt: 2,
   }];
+  const chooserInput = createTerminalInput();
+  const chooserOutput = createTerminalOutput();
+  let chooserText = '';
+  chooserOutput.on('data', (data) => { chooserText += data.toString('utf8'); });
+  chooserInput.write('1\n');
+  assert.equal(
+    await chooseWorkspaceResume({
+      candidates: [{ ...records[0], title: 'Current\u001b[31m project' }],
+      input: chooserInput,
+      output: chooserOutput,
+    }),
+    currentThread,
+    'The default workspace resume prompt did not return the chosen managed thread.',
+  );
+  assert.doesNotMatch(chooserText, /Current\u001b/, 'A saved title injected a terminal control sequence into the resume selector.');
+
   const recorded = [];
   let listedCwd = null;
   let selectedCandidates = null;
