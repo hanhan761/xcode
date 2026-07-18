@@ -39,7 +39,7 @@ if (($Arguments -join ' ') -eq 'root --global') {
     Write-Output $env:XCODE_TEST_GLOBAL_NPM_ROOT
     exit 0
 }
-if (($Arguments -join ' ') -eq 'install --global github:hanhan761/xcode#main') {
+if (($Arguments -join ' ') -eq 'install --global --force github:hanhan761/xcode#main') {
     exit 0
 }
 throw "Unexpected npm arguments: $($Arguments -join ' ')"

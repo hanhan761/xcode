@@ -186,7 +186,10 @@ function Update-XcodePackage {
     if (-not $npm) { throw 'npm is required for xcode update. Install Node.js 18 or newer, then run the command again.' }
 
     Write-XcodeStep 'Updating xcode from GitHub'
-    & $npm.Source install --global 'github:hanhan761/xcode#main'
+    # The package version can remain unchanged between GitHub main commits.
+    # Force npm to fetch the remote Git source instead of retaining a cached
+    # global package with the same manifest version.
+    & $npm.Source install --global --force 'github:hanhan761/xcode#main'
     if ($LASTEXITCODE -ne 0) { throw "npm could not update xcode (exit $LASTEXITCODE)." }
     # Versions before the npm package placed a WezTerm-only xcode.cmd in this
     # directory. It can shadow the npm command in older user PATHs.
