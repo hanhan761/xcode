@@ -209,6 +209,17 @@ function Update-XcodePackage {
         if ($LASTEXITCODE -ne 0) { throw "npm could not update xcode (exit $LASTEXITCODE)." }
         $updatedReleaseRoot = Get-XcodeGlobalPackageRoot -Npm $npm
         $report = Write-XcodeReleaseStatus -InstallationRoot $updatedReleaseRoot
+        # The managed selector is a PowerShell profile function. If an older
+        # installation removed or replaced it, bare `codex resume` falls
+        # through to the global Codex CLI and can list other workspaces.
+        # Repair it as part of a verified main-PC update rather than waiting
+        # for a managed launch that the missing function can no longer reach.
+        $updatedRole = $null
+        try { $updatedRole = Get-XcodeInstalledRole }
+        catch { $updatedRole = $null }
+        if ($updatedRole -eq 'main') {
+            [void](Install-XcodeManagedCodexProfileEntrypoint -ProfilePath $PROFILE.CurrentUserAllHosts)
+        }
     }
     catch {
         $updateFailure = $_

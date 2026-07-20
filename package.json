@@ -5,6 +5,9 @@
   "bin": {
     "xcode": "bin/xcode.js"
   },
+  "scripts": {
+    "postinstall": "node scripts/repair-managed-codex-profile.js"
+  },
   "files": [
     "bin",
     "scripts",
