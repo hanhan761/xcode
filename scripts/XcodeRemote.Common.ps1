@@ -241,6 +241,26 @@ function Write-XcodeUtf8File {
     }
 }
 
+function Write-XcodeOfficeAttachAllLauncher {
+    param([string]$DesktopDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory))
+
+    if (-not $DesktopDirectory) { throw 'Windows did not provide a Desktop directory for the office Codex launcher.' }
+    $launcher = Join-Path $DesktopDirectory 'Open all main-PC Codex conversations.cmd'
+    $content = @"
+@echo off
+setlocal EnableExtensions
+xcode.cmd -aa
+set "XCODE_EXIT=%ERRORLEVEL%"
+if not "%XCODE_EXIT%"=="0" (
+  echo.
+  pause
+)
+exit /b %XCODE_EXIT%
+"@
+    Write-XcodeUtf8File -Path $launcher -Content $content
+    return $launcher
+}
+
 function Update-XcodeManagedCodexProfileContent {
     param(
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Content,
