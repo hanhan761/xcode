@@ -78,6 +78,24 @@ async function main() {
     assert.equal(verifiedId, session.sessionId, 'A spawned office tab did not revalidate its selected session id.');
     assert.equal(registry.isActive(session.threadId), false, 'A completed office attachment kept a duplicate-blocking record.');
 
+    let normallySelected = false;
+    const normalExitCode = await runAttachedOfficeSession({
+      sshConfig: 'C:\\office\\ssh_config',
+      registry,
+      selectSession: async () => {
+        normallySelected = true;
+        return session;
+      },
+      openGateway: () => { throw new Error('The native test double must not open SSH.'); },
+      runNative: async ({ session: selected }) => {
+        assert.equal(selected.sessionId, session.sessionId);
+        return 0;
+      },
+    });
+    assert.equal(normalExitCode, 0, 'A normal Office attachment could not claim its reservation.');
+    assert.equal(normallySelected, true, 'A normal Office attachment did not select an active session.');
+    assert.equal(registry.isActive(session.threadId), false, 'A completed normal Office attachment kept a duplicate-blocking record.');
+
     const vanished = registry.reserve(session);
     await assert.rejects(
       runAttachedOfficeSession({
