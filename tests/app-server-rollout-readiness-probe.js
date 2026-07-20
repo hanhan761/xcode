@@ -55,6 +55,21 @@ async function waitFor(predicate, timeoutMs, description) {
   throw new Error(`Timed out waiting for ${description}.`);
 }
 
+function terminalText(terminal) {
+  const buffer = terminal.buffer.active;
+  return Array.from({ length: buffer.length }, (_, index) =>
+    buffer.getLine(index)?.translateToString(true) || '').join('\n');
+}
+
+async function typeLikeUser(tui, text) {
+  for (const character of text) {
+    tui.write(character);
+    await delay(12);
+  }
+  await delay(350);
+  tui.write('\r');
+}
+
 async function main() {
   if (!RUN) {
     console.log('APP_SERVER_ROLLOUT_READINESS=SKIPPED (set XCODE_RUN_APP_SERVER_ROLLOUT_PROBE=1 to run the authenticated startup proof)');
@@ -101,19 +116,22 @@ async function main() {
       raw += data;
       terminal.write(data);
     });
-    await waitFor(() => {
-      const buffer = terminal.buffer.active;
-      const text = Array.from({ length: buffer.length }, (_, index) =>
-        buffer.getLine(index)?.translateToString(true) || '').join('\n');
-      return text.includes('OpenAI Codex');
-    }, 45_000, `the native remote TUI to open (tail: ${JSON.stringify(raw.slice(-1_000))})`);
+    await waitFor(() => terminalText(terminal).includes('OpenAI Codex'), 45_000, 'the native remote TUI to open');
 
     const nativeTuiReadyAt = Date.now();
     const nativeTuiLatencyMs = nativeTuiReadyAt - turnAcceptedAt;
     assert.ok(nativeTuiLatencyMs >= 0, 'The native TUI timestamp predates turn/start acceptance.');
     const completedBeforeTui = completedAt !== null && completedAt <= nativeTuiReadyAt;
     assert.equal(completedBeforeTui, false, 'The native remote TUI was still gated on the bootstrap turn completion event.');
-    console.log(`APP_SERVER_ROLLOUT_READINESS=PASS nativeTuiMs=${nativeTuiLatencyMs} completedBeforeTui=${completedBeforeTui}`);
+    const challenge = `XCODE_ROLLOUT_READY_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const acknowledgement = `READY_${challenge}`;
+    await typeLikeUser(tui, `Reply with exactly: ${acknowledgement}. Do not use tools.`);
+    await waitFor(
+      () => terminalText(terminal).includes(acknowledgement),
+      45_000,
+      `the first native TUI turn to complete (tail: ${JSON.stringify(raw.slice(-1_000))})`,
+    );
+    console.log(`APP_SERVER_ROLLOUT_READINESS=PASS nativeTuiMs=${nativeTuiLatencyMs} completedBeforeTui=${completedBeforeTui} firstTurn=accepted`);
   }
   finally {
     await stopTui(tui);
