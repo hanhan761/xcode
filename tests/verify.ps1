@@ -165,6 +165,7 @@ $hiddenProcessBuild = Join-Path $root 'scripts\build-hidden-process-shim.ps1'
 $terminalOutputSink = Join-Path $root 'lib\terminal-output-sink.js'
 $terminalOutputCoalescer = Join-Path $root 'lib\terminal-output-coalescer.js'
 $codexExecutable = Join-Path $root 'lib\codex-executable.js'
+$codexInstallationReporter = Join-Path $root 'bin\codex-installation.js'
 $managedResumeIndex = Join-Path $root 'lib\managed-resume-index.js'
 $scopedAppServerRelay = Join-Path $root 'lib\scoped-app-server-relay.js'
 $nativeOfficeSession = Join-Path $root 'lib\native-codex-office-session.js'
@@ -201,6 +202,9 @@ $liveHiddenWindowHarness = Join-Path $root 'tests\live-hidden-app-server-window-
 $transientWindowProbeHarness = Join-Path $root 'tests\transient-window-event-probe-harness.js'
 $visibleWindowProbe = Join-Path $root 'tests\visible-child-window-probe.ps1'
 $roleHarness = Join-Path $root 'tests\role-resolution-harness.ps1'
+$codexInstallationHarness = Join-Path $root 'tests\codex-installation-harness.js'
+$codexUpdateGuardHarness = Join-Path $root 'tests\codex-update-session-guard-harness.ps1'
+$codexUpdateInstallationRootHarness = Join-Path $root 'tests\codex-update-installation-root-harness.ps1'
 Assert (Test-Path -LiteralPath $dispatcher) 'The unified xcode dispatcher is missing.'
 Assert (Test-Path -LiteralPath $packagePath) 'The npm package manifest is missing.'
 Assert (Test-Path -LiteralPath $nodeLauncher) 'The npm xcode binary is missing.'
@@ -218,6 +222,8 @@ Assert (Test-Path -LiteralPath $hiddenProcessBuild) 'The Windows hidden-process 
 Assert (Test-Path -LiteralPath $terminalOutputSink) 'The managed-terminal output sink is missing.'
 Assert (Test-Path -LiteralPath $terminalOutputCoalescer) 'The managed-terminal output coalescer is missing.'
 Assert (Test-Path -LiteralPath $codexExecutable) 'The pinned native Codex resolver is missing.'
+Assert (Test-Path -LiteralPath $codexInstallationReporter) 'The official Codex installation reporter is missing.'
+Assert (Test-Path -LiteralPath $codexUpdateInstallationRootHarness) 'The xcode update installation-root harness is missing.'
 Assert (Test-Path -LiteralPath $managedResumeIndex) 'The managed Codex workspace resume index is missing.'
 Assert (Test-Path -LiteralPath $scopedAppServerRelay) 'The selected-thread app-server relay is missing.'
 Assert (Test-Path -LiteralPath $nativeOfficeSession) 'The office native Codex adapter is missing.'
@@ -254,6 +260,8 @@ Assert (Test-Path -LiteralPath $liveHiddenWindowHarness) 'The live hidden-window
 Assert (Test-Path -LiteralPath $transientWindowProbeHarness) 'The transient-window event proof is missing.'
 Assert (Test-Path -LiteralPath $visibleWindowProbe) 'The visible-window probe is missing.'
 Assert (Test-Path -LiteralPath $roleHarness) 'The mixed-role resolution harness is missing.'
+Assert (Test-Path -LiteralPath $codexInstallationHarness) 'The official Codex installation harness is missing.'
+Assert (Test-Path -LiteralPath $codexUpdateGuardHarness) 'The active Codex-session update guard harness is missing.'
 $package = Get-Content -Raw -LiteralPath $packagePath | ConvertFrom-Json
 Assert ($package.name -eq 'xcode-remote') 'The npm package name is incorrect.'
 Assert ($package.version -eq '1.5.4') 'The native-scrollback release version is incorrect.'
@@ -270,6 +278,8 @@ Assert ((Get-Content -Raw $dispatcher) -match 'Start-XcodeManagedCodex') 'The ma
 Assert ((Get-Content -Raw $dispatcher) -match 'Connect-XcodeOfficeSharedTerminal') 'Office xcode does not attach to the shared host terminal.'
 Assert ((Get-Content -Raw $dispatcher) -match 'Get-XcodeActiveManagedSessionProcesses') 'xcode update does not detect active managed sessions before invoking npm.'
 Assert ((Get-Content -Raw $dispatcher) -match 'Windows cannot replace node-pty') 'xcode update does not explain the native-module update lock.'
+Assert ((Get-Content -Raw $dispatcher) -match 'Write-XcodeReleaseStatus') 'xcode update and status do not report the verified Codex release.'
+Assert ((Get-Content -Raw $codexExecutable) -match 'release-payload') 'The Codex resolver can select an unrelated global Codex installation.'
 Assert ($mainScript -notmatch 'session run --') 'The main-PC codex profile still emits a PowerShell-incompatible argument separator.'
 Assert ((Get-Content -Raw $nodeLauncher) -match 'PowerShell -File treats a bare') 'The npm launcher does not tolerate the legacy managed-session separator.'
 Assert ((Get-Content -Raw $managedRunner) -match 'startSharedAppServerSession') 'The main Codex entrypoint still uses the byte-forwarding session authority.'
@@ -333,6 +343,12 @@ Assert ($LASTEXITCODE -eq 0) 'The main Codex terminal did not recover after a re
 Assert ($LASTEXITCODE -eq 0) 'The office Codex terminal did not recover after a remote app-server transport reset.'
 & node.exe $officeDisconnectIsolationHarness
 Assert ($LASTEXITCODE -eq 0) 'An Office disconnect could still interrupt the main Codex authority.'
+& node.exe $codexInstallationHarness
+Assert ($LASTEXITCODE -eq 0) 'The official Codex installation could not be resolved and version-verified.'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $codexUpdateGuardHarness -RepositoryRoot $root
+Assert ($LASTEXITCODE -eq 0) 'xcode update did not protect active main or office native Codex sessions.'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $codexUpdateInstallationRootHarness -RepositoryRoot $root
+Assert ($LASTEXITCODE -eq 0) 'xcode update did not verify the global package it installed.'
 $nodeHelpText = (& node.exe $nodeLauncher help | Out-String)
 Assert ($LASTEXITCODE -eq 0 -and $nodeHelpText -match 'xcode office') 'The npm xcode binary cannot launch the dispatcher.'
 Assert ((Get-Content -Raw (Join-Path $root 'xcode.cmd')) -match 'bin\\xcode\.js') 'The repository xcode bootstrap does not use the safe npm launcher.'
