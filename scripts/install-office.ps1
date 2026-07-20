@@ -376,7 +376,9 @@ if ((-not $PairOnly) -and (Test-XcodeSshConnection -SshExe $ssh -ConfigPath $exi
             throw 'An installed office file no longer matches the managed security policy.'
         }
         Remove-XcodePathEntry -Directory (Join-Path $installRoot 'bin')
+        $launcher = Write-XcodeOfficeAttachAllLauncher
         Write-Host 'This office laptop is already paired; pinned SSH is working.' -ForegroundColor Green
+        Write-Host "One-click active conversations: $launcher" -ForegroundColor Cyan
         exit 0
     }
     catch {
@@ -489,5 +491,6 @@ Write-Host ''
 Write-Host 'Office laptop setup is complete.' -ForegroundColor Green
 Write-Host 'Open a NEW PowerShell window and run:'
 Write-Host '  xcode' -ForegroundColor Cyan
+Write-Host "One-click active conversations: $(Write-XcodeOfficeAttachAllLauncher)" -ForegroundColor Cyan
 Write-Host 'Use Ctrl+C to detach without changing the main-PC Codex conversation.'
 Write-Host 'Diagnostics: xcode doctor'
