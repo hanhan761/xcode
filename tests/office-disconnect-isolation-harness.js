@@ -54,6 +54,7 @@ async function main() {
   let mainConnection = null;
   let officeConnection = null;
   let officeCloseCode = null;
+  let officeConnections = 0;
   const mainMessages = [];
   output.on('data', (data) => { relayOutput += data.toString('utf8'); });
 
@@ -64,6 +65,7 @@ async function main() {
       return;
     }
     officeConnection = socket;
+    officeConnections += 1;
     socket.on('close', (code) => {
       officeCloseCode = code;
       // This models the authority's protective behavior: an abnormal observer
@@ -86,9 +88,20 @@ async function main() {
     await waitFor(() => officeCloseCode !== null, 1_000, 'the office relay to close');
     assert.equal(officeCloseCode, 1000, 'Office disconnect used an abnormal WebSocket close and can disrupt the main Codex authority.');
     assert.equal(mainClient.readyState, WebSocket.OPEN, 'Office disconnect closed the main Codex app-server client.');
+    assert.equal(input.listenerCount('error'), 0, 'A disconnected Office relay retained its input error listener.');
+    await waitFor(() => server.clients.size === 1, 1_000, 'the first Office relay connection to be released');
 
     mainClient.send('main-session-still-live');
     await waitFor(() => mainMessages.includes('main-session-still-live'), 1_000, 'the main session to remain writable after office disconnect');
+
+    const reconnectInput = new PassThrough();
+    const reconnectOutput = new PassThrough();
+    const reconnectRelay = relayScopedAppServer({ url, threadId, input: reconnectInput, output: reconnectOutput });
+    await waitFor(() => officeConnections === 2, 1_000, 'a new Office relay to attach to the same main session');
+    reconnectInput.end();
+    await reconnectRelay;
+    assert.equal(reconnectInput.listenerCount('error'), 0, 'A reconnected Office relay retained its input error listener after cleanup.');
+    await waitFor(() => server.clients.size === 1, 1_000, 'the reconnected Office relay connection to be released');
     process.stdout.write('OFFICE_DISCONNECT_ISOLATION=PASS\n');
   }
   finally {
