@@ -9,8 +9,13 @@ function powerShellLiteral(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
 
+function isGlobalNpmInstall(env) {
+  return String(env.npm_config_global || '').toLowerCase() === 'true' ||
+    String(env.npm_config_location || '').toLowerCase() === 'global';
+}
+
 function shouldRepairMainProfile({ env = process.env, fsModule = fs } = {}) {
-  if (!env.LOCALAPPDATA) { return false; }
+  if (!env.LOCALAPPDATA || !isGlobalNpmInstall(env)) { return false; }
   const installRoot = path.join(env.LOCALAPPDATA, 'XcodeRemote');
   const isOffice = fsModule.existsSync(path.join(installRoot, 'client.json')) ||
     fsModule.existsSync(path.join(installRoot, 'office-setup.json'));
@@ -48,4 +53,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { repairManagedCodexProfile, shouldRepairMainProfile };
+module.exports = { isGlobalNpmInstall, repairManagedCodexProfile, shouldRepairMainProfile };

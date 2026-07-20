@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const packageRoot = path.resolve(__dirname, '..');
-const { repairManagedCodexProfile, shouldRepairMainProfile } = require(path.join(packageRoot, 'scripts', 'repair-managed-codex-profile'));
+const { isGlobalNpmInstall, repairManagedCodexProfile, shouldRepairMainProfile } = require(path.join(packageRoot, 'scripts', 'repair-managed-codex-profile'));
 const manifest = require(path.join(packageRoot, 'package.json'));
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xcode-managed-profile-repair-'));
@@ -20,9 +20,10 @@ function mainState(localAppData) {
 
 try {
   assert.equal(manifest.scripts?.postinstall, 'node scripts/repair-managed-codex-profile.js', 'The profile repair is not registered for the first xcode update.');
+  assert.equal(isGlobalNpmInstall({ npm_config_location: 'global' }), true, 'A global npm location was not recognized for the profile repair.');
   const localAppData = path.join(root, 'main');
   mainState(localAppData);
-  const env = { LOCALAPPDATA: localAppData, SystemRoot: 'C:\\Windows' };
+  const env = { LOCALAPPDATA: localAppData, SystemRoot: 'C:\\Windows', npm_config_global: 'true' };
   const calls = [];
   assert.equal(repairManagedCodexProfile({
     packageRoot,
@@ -37,13 +38,22 @@ try {
   assert.match(calls[0].args.at(-1), /Install-XcodeManagedCodexProfileEntrypoint/, 'The postinstall repair did not install the managed Codex entrypoint.');
   assert.equal(calls[0].options.stdio, 'ignore', 'The postinstall repair exposed an interactive PowerShell window.');
 
+  const localInstallEnv = { LOCALAPPDATA: localAppData, SystemRoot: 'C:\\Windows' };
+  assert.equal(shouldRepairMainProfile({ env: localInstallEnv }), false, 'A local npm install was considered eligible for the managed profile repair.');
+  assert.equal(repairManagedCodexProfile({
+    packageRoot,
+    env: localInstallEnv,
+    platform: 'win32',
+    spawnProcess: () => { throw new Error('A local npm install must not alter the Codex profile.'); },
+  }), false);
+
   const officeAppData = path.join(root, 'office');
   mainState(officeAppData);
   fs.writeFileSync(path.join(officeAppData, 'XcodeRemote', 'client.json'), '{}');
-  assert.equal(shouldRepairMainProfile({ env: { LOCALAPPDATA: officeAppData } }), false, 'An office laptop was considered eligible for the main-PC profile repair.');
+  assert.equal(shouldRepairMainProfile({ env: { LOCALAPPDATA: officeAppData, npm_config_global: 'true' } }), false, 'An office laptop was considered eligible for the main-PC profile repair.');
   assert.equal(repairManagedCodexProfile({
     packageRoot,
-    env: { LOCALAPPDATA: officeAppData },
+    env: { LOCALAPPDATA: officeAppData, npm_config_global: 'true' },
     platform: 'win32',
     spawnProcess: () => { throw new Error('An office installation must not alter the Codex profile.'); },
   }), false);
