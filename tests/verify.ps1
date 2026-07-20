@@ -173,6 +173,8 @@ $terminalOutputCoalescer = Join-Path $root 'lib\terminal-output-coalescer.js'
 $codexExecutable = Join-Path $root 'lib\codex-executable.js'
 $officeAttachmentRegistry = Join-Path $root 'lib\office-attachment-registry.js'
 $officeAttachAll = Join-Path $root 'lib\office-attach-all.js'
+$codexInstallationReporter = Join-Path $root 'bin\codex-installation.js'
+$managedResumeIndex = Join-Path $root 'lib\managed-resume-index.js'
 $scopedAppServerRelay = Join-Path $root 'lib\scoped-app-server-relay.js'
 $nativeOfficeSession = Join-Path $root 'lib\native-codex-office-session.js'
 $nativeCodexTerminal = Join-Path $root 'lib\native-codex-terminal.js'
@@ -187,6 +189,8 @@ $nativeOfficeHarness = Join-Path $root 'tests\native-office-session-harness.js'
 $nativeOfficeMouseHarness = Join-Path $root 'tests\native-office-mouse-wheel-harness.js'
 $nativeOfficeTransportRecoveryHarness = Join-Path $root 'tests\native-office-transport-recovery-harness.js'
 $managedCodexTransportRecoveryHarness = Join-Path $root 'tests\managed-codex-transport-recovery-harness.js'
+$managedCodexResumeScopeHarness = Join-Path $root 'tests\managed-codex-resume-scope-harness.js'
+$managedResumeIndexHarness = Join-Path $root 'tests\managed-resume-index-harness.js'
 $sessionTitleHarness = Join-Path $root 'tests\session-title-harness.js'
 $nativeTwoClientHarness = Join-Path $root 'tests\native-two-client-tui-harness.js'
 $codexReadinessHarness = Join-Path $root 'tests\codex-readiness-harness.js'
@@ -207,6 +211,9 @@ $visibleWindowProbe = Join-Path $root 'tests\visible-child-window-probe.ps1'
 $roleHarness = Join-Path $root 'tests\role-resolution-harness.ps1'
 $officeAttachAllHarness = Join-Path $root 'tests\office-attach-all-harness.js'
 $sessionClientAttachHarness = Join-Path $root 'tests\session-client-attach-harness.js'
+$codexInstallationHarness = Join-Path $root 'tests\codex-installation-harness.js'
+$codexUpdateGuardHarness = Join-Path $root 'tests\codex-update-session-guard-harness.ps1'
+$codexUpdateInstallationRootHarness = Join-Path $root 'tests\codex-update-installation-root-harness.ps1'
 Assert (Test-Path -LiteralPath $dispatcher) 'The unified xcode dispatcher is missing.'
 Assert (Test-Path -LiteralPath $packagePath) 'The npm package manifest is missing.'
 Assert (Test-Path -LiteralPath $nodeLauncher) 'The npm xcode binary is missing.'
@@ -226,6 +233,9 @@ Assert (Test-Path -LiteralPath $terminalOutputCoalescer) 'The managed-terminal o
 Assert (Test-Path -LiteralPath $codexExecutable) 'The pinned native Codex resolver is missing.'
 Assert (Test-Path -LiteralPath $officeAttachmentRegistry) 'The office attachment registry is missing.'
 Assert (Test-Path -LiteralPath $officeAttachAll) 'The office attach-all controller is missing.'
+Assert (Test-Path -LiteralPath $codexInstallationReporter) 'The official Codex installation reporter is missing.'
+Assert (Test-Path -LiteralPath $codexUpdateInstallationRootHarness) 'The xcode update installation-root harness is missing.'
+Assert (Test-Path -LiteralPath $managedResumeIndex) 'The managed Codex workspace resume index is missing.'
 Assert (Test-Path -LiteralPath $scopedAppServerRelay) 'The selected-thread app-server relay is missing.'
 Assert (Test-Path -LiteralPath $nativeOfficeSession) 'The office native Codex adapter is missing.'
 Assert (Test-Path -LiteralPath $nativeCodexTerminal) 'The office native Codex terminal adapter is missing.'
@@ -240,6 +250,8 @@ Assert (Test-Path -LiteralPath $nativeOfficeHarness) 'The native office adapter 
 Assert (Test-Path -LiteralPath $nativeOfficeMouseHarness) 'The physical mouse-wheel adapter harness is missing.'
 Assert (Test-Path -LiteralPath $nativeOfficeTransportRecoveryHarness) 'The native office transport-recovery harness is missing.'
 Assert (Test-Path -LiteralPath $managedCodexTransportRecoveryHarness) 'The managed Codex transport-recovery harness is missing.'
+Assert (Test-Path -LiteralPath $managedCodexResumeScopeHarness) 'The managed Codex workspace resume harness is missing.'
+Assert (Test-Path -LiteralPath $managedResumeIndexHarness) 'The managed Codex resume-index harness is missing.'
 Assert (Test-Path -LiteralPath $sessionTitleHarness) 'The persistent session-title harness is missing.'
 Assert (Test-Path -LiteralPath $nativeTwoClientHarness) 'The two-official-client TUI harness is missing.'
 Assert (Test-Path -LiteralPath $codexReadinessHarness) 'The Codex readiness-gate harness is missing.'
@@ -258,8 +270,13 @@ Assert (Test-Path -LiteralPath $liveHiddenWindowHarness) 'The live hidden-window
 Assert (Test-Path -LiteralPath $transientWindowProbeHarness) 'The transient-window event proof is missing.'
 Assert (Test-Path -LiteralPath $visibleWindowProbe) 'The visible-window probe is missing.'
 Assert (Test-Path -LiteralPath $roleHarness) 'The mixed-role resolution harness is missing.'
+<<<<<<< HEAD
 Assert (Test-Path -LiteralPath $officeAttachAllHarness) 'The office attach-all harness is missing.'
 Assert (Test-Path -LiteralPath $sessionClientAttachHarness) 'The office session-client attach harness is missing.'
+=======
+Assert (Test-Path -LiteralPath $codexInstallationHarness) 'The official Codex installation harness is missing.'
+Assert (Test-Path -LiteralPath $codexUpdateGuardHarness) 'The active Codex-session update guard harness is missing.'
+>>>>>>> origin/main
 $package = Get-Content -Raw -LiteralPath $packagePath | ConvertFrom-Json
 Assert ($package.name -eq 'xcode-remote') 'The npm package name is incorrect.'
 Assert ($package.version -eq '1.5.4') 'The native-scrollback release version is incorrect.'
@@ -278,6 +295,8 @@ Assert ((Get-Content -Raw $dispatcher) -match 'Get-XcodeActiveManagedSessionProc
 Assert ((Get-Content -Raw $dispatcher) -match 'Windows cannot replace node-pty') 'xcode update does not explain the native-module update lock.'
 Assert ((Get-Content -Raw $dispatcher) -match "'-aa'") 'The office dispatcher does not expose xcode -aa.'
 Assert ((Get-Content -Raw $dispatcher) -match 'AttachAll') 'The office dispatcher does not route xcode -aa to the batch session client.'
+Assert ((Get-Content -Raw $dispatcher) -match 'Write-XcodeReleaseStatus') 'xcode update and status do not report the verified Codex release.'
+Assert ((Get-Content -Raw $codexExecutable) -match 'release-payload') 'The Codex resolver can select an unrelated global Codex installation.'
 Assert ($mainScript -notmatch 'session run --') 'The main-PC codex profile still emits a PowerShell-incompatible argument separator.'
 Assert ((Get-Content -Raw $nodeLauncher) -match 'PowerShell -File treats a bare') 'The npm launcher does not tolerate the legacy managed-session separator.'
 Assert ((Get-Content -Raw $managedRunner) -match 'startSharedAppServerSession') 'The main Codex entrypoint still uses the byte-forwarding session authority.'
@@ -293,6 +312,7 @@ Assert ((Get-Content -Raw $appServerSession) -match 'acquireSharedAppServer') 'M
 Assert ((Get-Content -Raw $managedRunner) -match 'createTerminalOutputSink') 'The managed Codex entrypoint can still crash on an unhandled terminal-stream error.'
 Assert ((Get-Content -Raw $managedRunner) -notmatch 'createTerminalOutputCoalescer') 'The managed Codex entrypoint still rewrites official terminal frames into snapshots.'
 Assert ((Get-Content -Raw $managedRunner) -match 'createTerminalTitleFilter') 'The managed Codex entrypoint no longer preserves persistent conversation tab titles.'
+Assert ((Get-Content -Raw $managedRunner) -match 'createManagedResumeIndex') 'The managed Codex entrypoint does not scope default resume candidates to the current workspace.'
 Assert ((Get-Content -Raw $managedRunner) -match 'DISABLE_MOUSE_REPORTING') 'The managed Codex entrypoint can still leave physical mouse-wheel capture enabled.'
 Assert ((Get-Content -Raw $managedRunner) -match 'transport-reset-retry') 'The managed Codex entrypoint cannot recover a reset remote app-server transport.'
 Assert ((Get-Content -Raw $appServerSession) -match "'turn/start'") 'The shared-session authority does not submit office messages as Codex turns.'
@@ -332,6 +352,10 @@ Assert ($LASTEXITCODE -eq 0) 'The selected-thread relay did not preserve authori
 Assert ($LASTEXITCODE -eq 0) 'The office native adapter did not preserve authoritative Working terminal states.'
 & node.exe $appServerResumeHarness
 Assert ($LASTEXITCODE -eq 0) 'A Codex resume can overwrite the stored thread workspace or lose its selected policy.'
+& node.exe $managedResumeIndexHarness
+Assert ($LASTEXITCODE -eq 0) 'Managed Codex resume records did not preserve current-workspace scope.'
+& node.exe $managedCodexResumeScopeHarness
+Assert ($LASTEXITCODE -eq 0) 'The default managed Codex resume selector was not limited to the current workspace.'
 & node.exe $managedCodexTransportRecoveryHarness
 Assert ($LASTEXITCODE -eq 0) 'The main Codex terminal did not recover after a remote app-server transport reset.'
 & node.exe $nativeOfficeTransportRecoveryHarness
@@ -340,6 +364,12 @@ Assert ($LASTEXITCODE -eq 0) 'The office Codex terminal did not recover after a 
 Assert ($LASTEXITCODE -eq 0) 'The office batch attach controller did not preserve active-session and duplicate semantics.'
 & node.exe $sessionClientAttachHarness
 Assert ($LASTEXITCODE -eq 0) 'The office tab launcher did not revalidate its selected native Codex session.'
+& node.exe $codexInstallationHarness
+Assert ($LASTEXITCODE -eq 0) 'The official Codex installation could not be resolved and version-verified.'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $codexUpdateGuardHarness -RepositoryRoot $root
+Assert ($LASTEXITCODE -eq 0) 'xcode update did not protect active main or office native Codex sessions.'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $codexUpdateInstallationRootHarness -RepositoryRoot $root
+Assert ($LASTEXITCODE -eq 0) 'xcode update did not verify the global package it installed.'
 $nodeHelpText = (& node.exe $nodeLauncher help | Out-String)
 Assert ($LASTEXITCODE -eq 0 -and $nodeHelpText -match 'xcode office') 'The npm xcode binary cannot launch the dispatcher.'
 Assert ((Get-Content -Raw (Join-Path $root 'xcode.cmd')) -match 'bin\\xcode\.js') 'The repository xcode bootstrap does not use the safe npm launcher.'

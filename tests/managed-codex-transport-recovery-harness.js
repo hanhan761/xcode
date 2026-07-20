@@ -63,6 +63,7 @@ function createSession({ outputFrames, exitCode }) {
 }
 
 async function mainHarness() {
+  const resumeIndex = { record() {} };
   const input = createTerminalInput();
   const output = createTerminalOutput();
   let visibleOutput = '';
@@ -88,6 +89,7 @@ async function mainHarness() {
     findCodex: () => 'fixture-codex.exe',
     findActiveThread: () => null,
     lifecycleLog() {},
+    resumeIndex,
     startSession: async (options) => {
       startCalls.push(options);
       return sessions.shift();
@@ -116,6 +118,7 @@ async function mainHarness() {
       return { processId: 8123 };
     },
     lifecycleLog() {},
+    resumeIndex,
     startSession: async () => { throw new Error('A duplicate restored session must not start a new Codex process.'); },
   });
   assert.equal(duplicateThreadId, threadId, 'A resume option before the thread id bypassed duplicate-session detection.');
@@ -139,6 +142,7 @@ async function mainHarness() {
     findCodex: () => 'fixture-codex.exe',
     findActiveThread: () => null,
     lifecycleLog() {},
+    resumeIndex,
     startSession: async (options) => {
       exhaustedStartCalls.push(options);
       return exhaustedSessions.shift();

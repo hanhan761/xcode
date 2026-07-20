@@ -26,4 +26,10 @@ if ($exitCode -ne 0 -or $output -notmatch '"role"\s*:\s*"office"') {
 if ($output -match '"role"\s*:\s*"main"') {
     throw "ROLE_RESOLUTION=FAIL: the stale main-PC state won over the office role.`n$output"
 }
+if ($output -notmatch 'Codex version\s*:') {
+    throw "ROLE_RESOLUTION=FAIL: xcode status did not report the verified Codex version.`n$output"
+}
+if ($output -notmatch 'Codex source\s*:\s*release-payload') {
+    throw "ROLE_RESOLUTION=FAIL: xcode status did not report release-payload Codex provenance.`n$output"
+}
 Write-Host 'ROLE_RESOLUTION=PASS'

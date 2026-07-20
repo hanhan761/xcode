@@ -41,6 +41,8 @@ xcode office
 codex
 # 或
 codex resume --last
+# 无参数 resume 只列出本文件夹的受管对话
+codex resume
 ```
 
 2. 办公本在当前 PowerShell 输入：
@@ -70,6 +72,10 @@ xcode -aa
 ```powershell
 xcode update
 ```
+
+更新成功后会显示 xcode 版本、随该发布版安装的官方 Codex 版本，以及
+`release-payload` 或显式 `XCODE_CODEX_PATH` 覆盖来源。两台电脑分别运行
+`xcode status`，确认这三项一致后再开始或恢复共享对话。
 
 更新完成后打开新的 PowerShell。两端由 xcode 安装同一个经过验证的官方 Codex 版本，避免 app-server 协议版本漂移。
 

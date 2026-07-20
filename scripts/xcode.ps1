@@ -110,7 +110,7 @@ function Get-XcodeActiveManagedSessionProcesses {
             Get-CimInstance Win32_Process -ErrorAction Stop |
                 Where-Object {
                     $_.Name -ieq 'node.exe' -and
-                    [string]$_.CommandLine -match '(?i)xcode-remote[\\/]bin[\\/]managed-codex\.js'
+                    [string]$_.CommandLine -match '(?i)xcode-remote[\\/]bin[\\/](?:managed-codex|session-client)\.js'
                 } |
                 ForEach-Object {
                     [pscustomobject]@{
@@ -123,24 +123,115 @@ function Get-XcodeActiveManagedSessionProcesses {
     catch { return @() }
 }
 
+function Get-XcodeReleaseInstallation {
+    param([string]$InstallationRoot = $RepositoryRoot)
+
+    $node = Get-Command node.exe -ErrorAction SilentlyContinue
+    if (-not $node) { throw 'Node.js is unavailable. Reinstall xcode with npm, then open a new PowerShell window.' }
+    $reporter = Join-Path $InstallationRoot 'bin\codex-installation.js'
+    if (-not (Test-Path -LiteralPath $reporter -PathType Leaf)) { throw 'The Codex installation verifier is missing. Run xcode update.' }
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = (& $node.Source $reporter --json 2>&1 | Out-String)
+        $exitCode = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $previousErrorActionPreference }
+    if ($exitCode -ne 0) {
+        $detail = $output.Trim()
+        $message = 'xcode could not verify its official Codex installation'
+        if ($detail) { $message += ': ' + $detail }
+        else { $message += '.' }
+        throw $message
+    }
+    try { $report = $output | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw 'xcode received an invalid official Codex installation report. Run xcode update.' }
+    if (-not $report.xcodeVersion -or -not $report.codex -or -not $report.codex.version -or
+        [string]$report.codex.source -notin @('release-payload', 'explicit-override')) {
+        throw 'xcode received an incomplete official Codex installation report. Run xcode update.'
+    }
+    return $report
+}
+
+function Write-XcodeReleaseStatus {
+    param([string]$InstallationRoot = $RepositoryRoot)
+
+    $report = Get-XcodeReleaseInstallation -InstallationRoot $InstallationRoot
+    Write-Host "xcode version : $($report.xcodeVersion)"
+    Write-Host "Codex version : $($report.codex.version)"
+    Write-Host "Codex source  : $($report.codex.source)"
+    return $report
+}
+
+function Get-XcodeGlobalPackageRoot {
+    param([Parameter(Mandatory = $true)]$Npm)
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = (& $Npm.Source root --global | Out-String)
+        $exitCode = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $previousErrorActionPreference }
+    if ($exitCode -ne 0 -or -not $output.Trim()) {
+        throw 'npm could not locate the globally installed xcode release after updating it.'
+    }
+    $packageRoot = Join-Path $output.Trim() 'xcode-remote'
+    if (-not (Test-Path -LiteralPath $packageRoot -PathType Container)) {
+        throw 'npm updated xcode but its global xcode-remote package directory is unavailable.'
+    }
+    return (Resolve-Path -LiteralPath $packageRoot).Path
+}
+
 function Update-XcodePackage {
     $activeManagedSessions = @(Get-XcodeActiveManagedSessionProcesses)
     if ($activeManagedSessions.Count -gt 0) {
         $processIds = ($activeManagedSessions.ProcessId -join ', ')
-        throw "xcode update is paused because $($activeManagedSessions.Count) managed Codex session(s) are active (Node PID: $processIds). Save them if needed, close their terminal tabs so managed-codex.js exits, then rerun xcode update. Windows cannot replace node-pty while those sessions are open."
+        throw "xcode update is paused because $($activeManagedSessions.Count) xcode-managed Codex session(s) are active (Node PID: $processIds). Save them if needed, close their terminal tabs so the local xcode session exits, then rerun xcode update. Windows cannot replace node-pty while those sessions are open."
     }
 
     $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
     if (-not $npm) { $npm = Get-Command npm -ErrorAction SilentlyContinue }
     if (-not $npm) { throw 'npm is required for xcode update. Install Node.js 18 or newer, then run the command again.' }
 
+    $currentReleaseRoot = Get-XcodeGlobalPackageRoot -Npm $npm
+    $backupRoot = Join-Path (Split-Path -Parent $currentReleaseRoot) ('.xcode-remote-backup-' + [guid]::NewGuid().ToString('N'))
+    $preserveBackup = $false
+    Copy-Item -LiteralPath $currentReleaseRoot -Destination $backupRoot -Recurse -Force -ErrorAction Stop
+
     Write-XcodeStep 'Updating xcode from GitHub'
-    & $npm.Source install --global 'github:hanhan761/xcode#main'
-    if ($LASTEXITCODE -ne 0) { throw "npm could not update xcode (exit $LASTEXITCODE)." }
+    try {
+        # The package version can remain unchanged between GitHub main commits.
+        # Force npm to fetch the remote Git source instead of retaining a cached
+        # global package with the same manifest version.
+        & $npm.Source install --global --force 'github:hanhan761/xcode#main'
+        if ($LASTEXITCODE -ne 0) { throw "npm could not update xcode (exit $LASTEXITCODE)." }
+        $updatedReleaseRoot = Get-XcodeGlobalPackageRoot -Npm $npm
+        $report = Write-XcodeReleaseStatus -InstallationRoot $updatedReleaseRoot
+    }
+    catch {
+        $updateFailure = $_
+        try {
+            if (Test-Path -LiteralPath $currentReleaseRoot) { Remove-Item -LiteralPath $currentReleaseRoot -Recurse -Force -ErrorAction Stop }
+            Move-Item -LiteralPath $backupRoot -Destination $currentReleaseRoot -ErrorAction Stop
+            $backupRoot = $null
+        }
+        catch {
+            $preserveBackup = $true
+            throw "xcode update failed: $($updateFailure.Exception.Message) The previous release could not be restored; its backup remains at $backupRoot."
+        }
+        throw $updateFailure
+    }
+    finally {
+        if (-not $preserveBackup -and $backupRoot -and (Test-Path -LiteralPath $backupRoot)) {
+            Remove-Item -LiteralPath $backupRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
     # Versions before the npm package placed a WezTerm-only xcode.cmd in this
     # directory. It can shadow the npm command in older user PATHs.
     Remove-XcodePathEntry -Directory (Join-Path $env:LOCALAPPDATA 'XcodeRemote\bin')
-    Write-Host 'xcode is updated. The legacy local launcher was removed from your PATH; open a new PowerShell window before your next xcode command.' -ForegroundColor Green
+    Write-Host "xcode is updated with verified Codex $($report.codex.version) ($($report.codex.source)). The legacy local launcher was removed from your PATH; open a new PowerShell window before your next xcode command." -ForegroundColor Green
 }
 
 $verb = if ($Command.Count -eq 0) { '' } else { $Command[0].ToLowerInvariant() }
@@ -205,6 +296,7 @@ switch ($installedRole) {
             }
             'status' {
                 Get-Content -Raw -LiteralPath (Join-Path $env:LOCALAPPDATA 'XcodeRemote\host-user.json')
+                Write-XcodeReleaseStatus | Out-Null
             }
             'unpair' {
                 & (Join-Path $PSScriptRoot 'unpair-office.ps1')
@@ -233,6 +325,7 @@ switch ($installedRole) {
                 $statePath = Join-Path $env:LOCALAPPDATA 'XcodeRemote\client.json'
                 if (Test-Path -LiteralPath $statePath -PathType Leaf) { Get-Content -Raw -LiteralPath $statePath }
                 else { Write-Host 'Office role: prepared; pairing: not yet completed.' -ForegroundColor Yellow }
+                Write-XcodeReleaseStatus | Out-Null
             }
             'doctor' { Invoke-XcodeOfficeDoctor }
             'unpair' { throw 'Run xcode unpair on the main PC to revoke this office laptop.' }

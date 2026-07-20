@@ -3,8 +3,10 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const readline = require('node:readline/promises');
 const { parseResumeInvocation, startSharedAppServerSession } = require('../lib/app-server-session');
 const { findNativeCodex } = require('../lib/codex-executable');
+const { createManagedResumeIndex } = require('../lib/managed-resume-index');
 const { createTerminalOutputSink } = require('../lib/terminal-output-sink');
 const { createTerminalTitleFilter } = require('../lib/session-title');
 
@@ -36,6 +38,31 @@ function terminalDimensions(output = process.stdout) {
     cols: Math.max(20, output.columns || 120),
     rows: Math.max(5, output.rows || 36),
   };
+}
+
+function resumeLabel(candidate) {
+  return String(candidate.title || path.basename(candidate.cwd) || 'Unnamed conversation')
+    .replace(/[\x00-\x1f\x7f-\x9f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || 'Unnamed conversation';
+}
+
+async function chooseWorkspaceResume({ candidates, input, output }) {
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    throw new Error('There is no saved managed Codex conversation in this folder to resume. Start one with codex first.');
+  }
+  output.write('Managed Codex conversations in this folder:\r\n');
+  candidates.forEach((candidate, index) => output.write(`  [${index + 1}] ${resumeLabel(candidate)}\r\n`));
+  const prompt = readline.createInterface({ input, output });
+  try {
+    const answer = await prompt.question('Choose a conversation: ');
+    const selected = Number.parseInt(answer, 10);
+    if (!Number.isInteger(selected) || selected < 1 || selected > candidates.length) {
+      throw new Error('Invalid Codex conversation selection.');
+    }
+    return candidates[selected - 1].threadId;
+  }
+  finally { prompt.close(); }
 }
 
 function defaultStateRoot() {
@@ -90,6 +117,8 @@ async function main({
   startSession = startSharedAppServerSession,
   findActiveThread = findActiveManagedThread,
   lifecycleLog = appendLifecycleLog,
+  resumeIndex = null,
+  chooseResume = chooseWorkspaceResume,
   transportRecoveryAttempts = DEFAULT_TRANSPORT_RECOVERY_ATTEMPTS,
   transportRecoveryDelayMs = DEFAULT_TRANSPORT_RECOVERY_DELAY_MS,
 } = {}) {
@@ -104,8 +133,18 @@ async function main({
   }
   const codex = findCodex({ preferGlobal: false });
   const initialSize = terminalDimensions(outputStream);
-  const codexArgs = args;
-  const resume = parseResumeInvocation(codexArgs);
+  const managedResumeIndex = resumeIndex || createManagedResumeIndex({ root: path.join(path.dirname(stateRoot), 'managed-resume-index') });
+  let codexArgs = args;
+  let resume = parseResumeInvocation(codexArgs);
+  if (resume && !resume.useLast && !resume.threadId) {
+    const candidates = managedResumeIndex.list(cwd);
+    const selectedThreadId = await chooseResume({ candidates, cwd, input, output: outputStream });
+    if (!candidates.some((candidate) => candidate.threadId === selectedThreadId)) {
+      throw new Error('The selected Codex conversation is not available in this folder.');
+    }
+    codexArgs = [...codexArgs, selectedThreadId];
+    resume = parseResumeInvocation(codexArgs);
+  }
   const resumedThreadId = resume?.threadId || null;
   const existing = findActiveThread(stateRoot, resumedThreadId);
   if (existing) {
@@ -155,11 +194,22 @@ async function main({
         throw error;
       }
 
+      const recordResumeCandidate = (title = session.title) => {
+        try {
+          managedResumeIndex.record({ threadId: session.threadId, cwd: session.cwd || cwd, title });
+        }
+        catch (error) { lifecycleLog('resume-index-failed', { threadId: session.threadId, error: error.message }); }
+      };
+      recordResumeCandidate();
+
       let outputTail = '';
       const terminalOutput = createTerminalTitleFilter((data) => output.write(data), session.title);
       output.write(DISABLE_MOUSE_REPORTING);
       terminalOutput.setSessionTitle(session.title);
-      const unsubscribeTitle = session.onTitle((title) => terminalOutput.setSessionTitle(title));
+      const unsubscribeTitle = session.onTitle((title) => {
+        recordResumeCandidate(title);
+        terminalOutput.setSessionTitle(title);
+      });
       const unsubscribeOutput = session.onOutput((data) => {
         outputTail = `${outputTail}${data}`.slice(-8_192);
         terminalOutput.write(data);
@@ -206,4 +256,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main };
+module.exports = { chooseWorkspaceResume, main };
