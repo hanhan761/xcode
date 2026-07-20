@@ -202,6 +202,7 @@ $liveCodexProbe = Join-Path $root 'tests\live-codex-remote-input-probe.js'
 $appServerSharedThreadHarness = Join-Path $root 'tests\app-server-shared-thread-harness.js'
 $appServerResumeHarness = Join-Path $root 'tests\app-server-resume-harness.js'
 $appServerStartupHarness = Join-Path $root 'tests\app-server-startup-harness.js'
+$appServerRolloutReadinessProbe = Join-Path $root 'tests\app-server-rollout-readiness-probe.js'
 $appServerHostHarness = Join-Path $root 'tests\app-server-host-harness.js'
 $recoverySharedHostHarness = Join-Path $root 'tests\recovery-shared-host-harness.js'
 $terminalOutputSinkHarness = Join-Path $root 'tests\terminal-output-sink-harness.js'
@@ -266,6 +267,7 @@ Assert (Test-Path -LiteralPath $liveCodexProbe) 'The isolated real-Codex probe i
 Assert (Test-Path -LiteralPath $appServerSharedThreadHarness) 'The app-server same-thread harness is missing.'
 Assert (Test-Path -LiteralPath $appServerResumeHarness) 'The app-server resume-preservation harness is missing.'
 Assert (Test-Path -LiteralPath $appServerStartupHarness) 'The app-server startup isolation harness is missing.'
+Assert (Test-Path -LiteralPath $appServerRolloutReadinessProbe) 'The native app-server rollout-readiness proof is missing.'
 Assert (Test-Path -LiteralPath $appServerHostHarness) 'The shared app-server host harness is missing.'
 Assert (Test-Path -LiteralPath $recoverySharedHostHarness) 'The recovery shared-host harness is missing.'
 Assert (Test-Path -LiteralPath $terminalOutputSinkHarness) 'The managed-terminal output sink harness is missing.'
@@ -356,6 +358,10 @@ Assert ($LASTEXITCODE -eq 0) 'The selected-thread relay did not preserve authori
 Assert ($LASTEXITCODE -eq 0) 'The office native adapter did not preserve authoritative Working terminal states.'
 & node.exe $appServerResumeHarness
 Assert ($LASTEXITCODE -eq 0) 'A Codex resume can overwrite the stored thread workspace or lose its selected policy.'
+& node.exe $appServerStartupHarness
+Assert ($LASTEXITCODE -eq 0) 'The native Codex TUI can still be blocked after its rollout bootstrap was accepted.'
+& node.exe $appServerRolloutReadinessProbe
+Assert ($LASTEXITCODE -eq 0) 'The opt-in native app-server rollout-readiness proof cannot be loaded.'
 & node.exe $managedResumeIndexHarness
 Assert ($LASTEXITCODE -eq 0) 'Managed Codex resume records did not preserve current-workspace scope.'
 & node.exe $managedProfileRepairHarness
