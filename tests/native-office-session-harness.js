@@ -18,6 +18,7 @@ const session = {
 };
 const appMessages = [];
 let officeConfigFixture = '';
+let completionStatus = 'failed';
 
 function createFakeGateway() {
   const child = new EventEmitter();
@@ -41,12 +42,19 @@ function createFakeGateway() {
       pending = pending.slice(newline + 1);
       const message = JSON.parse(Buffer.from(frame.data, 'base64').toString('utf8'));
       appMessages.push(message);
-      const response = JSON.stringify({ id: message.id, result: { serverInfo: { name: 'fixture' } } });
-      child.stdout.write(`${JSON.stringify({ type: 'message', data: Buffer.from(response, 'utf8').toString('base64') })}\n`);
-      const started = JSON.stringify({ method: 'turn/started', params: { threadId: session.threadId, turn: { id: 'turn-failed', status: 'inProgress' } } });
-      const failed = JSON.stringify({ method: 'turn/completed', params: { threadId: session.threadId, turn: { id: 'turn-failed', status: 'failed' } } });
-      child.stdout.write(`${JSON.stringify({ type: 'message', data: Buffer.from(started, 'utf8').toString('base64') })}\n`);
-      child.stdout.write(`${JSON.stringify({ type: 'message', data: Buffer.from(failed, 'utf8').toString('base64') })}\n`);
+      if (message.method === 'initialize') {
+        const initialized = JSON.stringify({ id: message.id, result: { serverInfo: { name: 'fixture' } } });
+        child.stdout.write(`${JSON.stringify({ type: 'message', data: Buffer.from(initialized, 'utf8').toString('base64') })}\n`);
+        const started = JSON.stringify({ method: 'turn/started', params: { threadId: session.threadId, turn: { id: `turn-${completionStatus}`, status: 'inProgress' } } });
+        const completed = JSON.stringify({ method: 'turn/completed', params: { threadId: session.threadId, turn: { id: `turn-${completionStatus}`, status: completionStatus } } });
+        child.stdout.write(`${JSON.stringify({ type: 'message', data: Buffer.from(started, 'utf8').toString('base64') })}\n`);
+        child.stdout.write(`${JSON.stringify({ type: 'message', data: Buffer.from(completed, 'utf8').toString('base64') })}\n`);
+        continue;
+      }
+      if (message.method === 'thread/resume') {
+        const resumed = JSON.stringify({ id: message.id, result: { thread: { id: session.threadId, status: 'idle' } } });
+        child.stdout.write(`${JSON.stringify({ type: 'message', data: Buffer.from(resumed, 'utf8').toString('base64') })}\n`);
+      }
     }
   });
   queueMicrotask(() => child.stdout.write(`${JSON.stringify({ type: 'open' })}\n`));
@@ -80,17 +88,25 @@ function spawnFakeCodex(file, args, options) {
   const socket = new WebSocket(args[args.indexOf('--remote') + 1]);
   socket.on('open', () => socket.send(JSON.stringify({ id: 7, method: 'initialize', params: { clientInfo: { name: 'fixture-codex' } } })));
   const received = [];
+  let resumed = false;
   socket.on('message', (data) => {
     const message = JSON.parse(data.toString('utf8'));
     received.push(message);
     if (message.id === 7) {
       assert.equal(message.result.serverInfo.name, 'fixture');
+      socket.send(JSON.stringify({ id: 8, method: 'thread/resume', params: { threadId: session.threadId } }));
       return;
     }
+    if (message.id === 8) {
+      assert.equal(message.result.thread.id, session.threadId);
+      resumed = true;
+      return;
+    }
+    assert.equal(resumed, true, 'The native TUI received a turn notification before thread/resume completed.');
     if (message.method === 'turn/completed') {
-      assert.deepEqual(received.map((event) => event.method || `response:${event.id}`), ['response:7', 'turn/started', 'turn/completed']);
+      assert.deepEqual(received.map((event) => event.method || `response:${event.id}`), ['response:7', 'response:8', 'turn/started', 'turn/completed']);
       assert.equal(message.params.threadId, session.threadId);
-      assert.equal(message.params.turn.status, 'failed');
+      assert.equal(message.params.turn.status, completionStatus);
       socket.close();
     }
   });
@@ -106,7 +122,8 @@ function spawnFakeCodex(file, args, options) {
 async function main() {
   const officeCodexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'xcode-office-fast-config-'));
   try {
-    async function runOfficeSession() {
+    async function runOfficeSession(status) {
+      completionStatus = status;
       let gatewayArgs;
       let gatewayOptions;
       const exitCode = await runNativeCodexOfficeSession({
@@ -130,16 +147,18 @@ async function main() {
 
     officeConfigFixture = 'model = "gpt-5.6-terra"\nservice_tier = "fast"\n';
     fs.writeFileSync(path.join(officeCodexHome, 'config.toml'), officeConfigFixture);
-    await runOfficeSession();
+    await runOfficeSession('completed');
 
     session.model = 'gpt-5.6';
     session.serviceTier = 'fast';
     officeConfigFixture = 'model = "gpt-5.4"\nservice_tier = "default"\n';
     fs.writeFileSync(path.join(officeCodexHome, 'config.toml'), officeConfigFixture);
-    await runOfficeSession();
+    await runOfficeSession('interrupted');
+    await runOfficeSession('failed');
 
-    assert.equal(appMessages.length, 2);
-    assert.ok(appMessages.every((message) => message.method === 'initialize'));
+    assert.equal(appMessages.length, 6);
+    assert.deepEqual(appMessages.map((message) => message.method), ['initialize', 'thread/resume', 'initialize', 'thread/resume', 'initialize', 'thread/resume']);
+    assert.ok(appMessages.filter((message) => message.method === 'thread/resume').every((message) => message.params.threadId === session.threadId));
     process.stdout.write('NATIVE_OFFICE_SESSION=PASS\n');
   }
   finally {
