@@ -270,13 +270,10 @@ Assert (Test-Path -LiteralPath $liveHiddenWindowHarness) 'The live hidden-window
 Assert (Test-Path -LiteralPath $transientWindowProbeHarness) 'The transient-window event proof is missing.'
 Assert (Test-Path -LiteralPath $visibleWindowProbe) 'The visible-window probe is missing.'
 Assert (Test-Path -LiteralPath $roleHarness) 'The mixed-role resolution harness is missing.'
-<<<<<<< HEAD
 Assert (Test-Path -LiteralPath $officeAttachAllHarness) 'The office attach-all harness is missing.'
 Assert (Test-Path -LiteralPath $sessionClientAttachHarness) 'The office session-client attach harness is missing.'
-=======
 Assert (Test-Path -LiteralPath $codexInstallationHarness) 'The official Codex installation harness is missing.'
 Assert (Test-Path -LiteralPath $codexUpdateGuardHarness) 'The active Codex-session update guard harness is missing.'
->>>>>>> origin/main
 $package = Get-Content -Raw -LiteralPath $packagePath | ConvertFrom-Json
 Assert ($package.name -eq 'xcode-remote') 'The npm package name is incorrect.'
 Assert ($package.version -eq '1.5.4') 'The native-scrollback release version is incorrect.'

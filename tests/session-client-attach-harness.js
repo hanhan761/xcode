@@ -30,7 +30,13 @@ async function main() {
       sshConfig: 'C:\\office\\ssh_config', sessionId: null, attachmentToken: null, attachAll: true,
     });
     assert.throws(() => parseArgs(['--ssh-config', 'config', '--attach-all', '--session-id', session.sessionId]), /Usage/);
-    assert.deepEqual(nativeSessions([session, { ...session, nativeTuiAvailable: false }]), [session]);
+    assert.deepEqual(nativeSessions([
+      session,
+      { ...session, nativeTuiAvailable: false },
+      { ...session, nativeTuiAvailable: 'true' },
+      { ...session, sessionId: '' },
+      { ...session, threadId: '' },
+    ]), [session], 'Only schema-compatible native session capabilities may be attached.');
     assert.throws(
       () => resolveWindowsTerminal({ spawnSyncProcess: () => ({ status: 1, stdout: '', stderr: 'missing' }) }),
       /Windows Terminal/,

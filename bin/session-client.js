@@ -73,7 +73,9 @@ async function listSessions(sshConfig) {
 }
 
 function nativeSessions(active) {
-  return active.filter((session) => session.nativeTuiAvailable && typeof session.threadId === 'string' && typeof session.sessionId === 'string');
+  return active.filter((session) => session?.nativeTuiAvailable === true &&
+    typeof session.threadId === 'string' && session.threadId &&
+    typeof session.sessionId === 'string' && session.sessionId);
 }
 
 async function listNativeSessions(sshConfig) {
