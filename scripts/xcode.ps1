@@ -185,17 +185,42 @@ function Update-XcodePackage {
     if (-not $npm) { $npm = Get-Command npm -ErrorAction SilentlyContinue }
     if (-not $npm) { throw 'npm is required for xcode update. Install Node.js 18 or newer, then run the command again.' }
 
+    $currentReleaseRoot = Get-XcodeGlobalPackageRoot -Npm $npm
+    $backupRoot = Join-Path (Split-Path -Parent $currentReleaseRoot) ('.xcode-remote-backup-' + [guid]::NewGuid().ToString('N'))
+    $preserveBackup = $false
+    Copy-Item -LiteralPath $currentReleaseRoot -Destination $backupRoot -Recurse -Force -ErrorAction Stop
+
     Write-XcodeStep 'Updating xcode from GitHub'
-    # The package version can remain unchanged between GitHub main commits.
-    # Force npm to fetch the remote Git source instead of retaining a cached
-    # global package with the same manifest version.
-    & $npm.Source install --global --force 'github:hanhan761/xcode#main'
-    if ($LASTEXITCODE -ne 0) { throw "npm could not update xcode (exit $LASTEXITCODE)." }
+    try {
+        # The package version can remain unchanged between GitHub main commits.
+        # Force npm to fetch the remote Git source instead of retaining a cached
+        # global package with the same manifest version.
+        & $npm.Source install --global --force 'github:hanhan761/xcode#main'
+        if ($LASTEXITCODE -ne 0) { throw "npm could not update xcode (exit $LASTEXITCODE)." }
+        $updatedReleaseRoot = Get-XcodeGlobalPackageRoot -Npm $npm
+        $report = Write-XcodeReleaseStatus -InstallationRoot $updatedReleaseRoot
+    }
+    catch {
+        $updateFailure = $_
+        try {
+            if (Test-Path -LiteralPath $currentReleaseRoot) { Remove-Item -LiteralPath $currentReleaseRoot -Recurse -Force -ErrorAction Stop }
+            Move-Item -LiteralPath $backupRoot -Destination $currentReleaseRoot -ErrorAction Stop
+            $backupRoot = $null
+        }
+        catch {
+            $preserveBackup = $true
+            throw "xcode update failed: $($updateFailure.Exception.Message) The previous release could not be restored; its backup remains at $backupRoot."
+        }
+        throw $updateFailure
+    }
+    finally {
+        if (-not $preserveBackup -and $backupRoot -and (Test-Path -LiteralPath $backupRoot)) {
+            Remove-Item -LiteralPath $backupRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
     # Versions before the npm package placed a WezTerm-only xcode.cmd in this
     # directory. It can shadow the npm command in older user PATHs.
     Remove-XcodePathEntry -Directory (Join-Path $env:LOCALAPPDATA 'XcodeRemote\bin')
-    $updatedReleaseRoot = Get-XcodeGlobalPackageRoot -Npm $npm
-    $report = Write-XcodeReleaseStatus -InstallationRoot $updatedReleaseRoot
     Write-Host "xcode is updated with verified Codex $($report.codex.version) ($($report.codex.source)). The legacy local launcher was removed from your PATH; open a new PowerShell window before your next xcode command." -ForegroundColor Green
 }
 

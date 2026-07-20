@@ -40,6 +40,9 @@ if (($Arguments -join ' ') -eq 'root --global') {
     exit 0
 }
 if (($Arguments -join ' ') -eq 'install --global --force github:hanhan761/xcode#main') {
+    if ($env:XCODE_TEST_UPDATE_MODE -eq 'broken') {
+        Set-Content -LiteralPath (Join-Path $env:XCODE_TEST_GLOBAL_NPM_ROOT 'xcode-remote\release-marker.txt') -Value 'broken' -Encoding utf8
+    }
     exit 0
 }
 throw "Unexpected npm arguments: $($Arguments -join ' ')"
@@ -61,6 +64,8 @@ throw "Unexpected npm arguments: $($Arguments -join ' ')"
     $script:verifiedInstallationRoot = ''
     function Write-XcodeReleaseStatus {
         param([string]$InstallationRoot)
+        $marker = (Get-Content -Raw -LiteralPath (Join-Path $InstallationRoot 'release-marker.txt')).Trim()
+        if ($marker -eq 'broken') { throw 'The staged Codex version probe failed.' }
         $script:verifiedInstallationRoot = $InstallationRoot
         return [pscustomobject]@{ codex = [pscustomobject]@{ version = '0.0.0-test'; source = 'release-payload' } }
     }
@@ -68,9 +73,23 @@ throw "Unexpected npm arguments: $($Arguments -join ' ')"
     $originalLocalAppData = $env:LOCALAPPDATA
     try {
         $env:LOCALAPPDATA = $fixtureRoot
+        Set-Content -LiteralPath (Join-Path $globalRelease 'release-marker.txt') -Value 'known-good' -Encoding utf8
+        $env:XCODE_TEST_UPDATE_MODE = 'success'
         Update-XcodePackage
+        $env:XCODE_TEST_UPDATE_MODE = 'broken'
+        $updateError = $null
+        try { Update-XcodePackage }
+        catch { $updateError = $_ }
+        Assert-UpdateInstallationRootHarness ($null -ne $updateError -and $updateError.Exception.Message -match 'version probe failed') 'A failed release verification did not stop xcode update.'
+        $restoredMarker = (Get-Content -Raw -LiteralPath (Join-Path $globalRelease 'release-marker.txt')).Trim()
+        Assert-UpdateInstallationRootHarness ($restoredMarker -eq 'known-good') 'xcode update did not restore the previous global package after release verification failed.'
+        $backups = @(Get-ChildItem -LiteralPath $globalModules -Directory -Filter '.xcode-remote-backup-*')
+        Assert-UpdateInstallationRootHarness ($backups.Count -eq 0) 'xcode update left a stale global-package backup after verification failed.'
     }
-    finally { $env:LOCALAPPDATA = $originalLocalAppData }
+    finally {
+        $env:LOCALAPPDATA = $originalLocalAppData
+        Remove-Item Env:\XCODE_TEST_UPDATE_MODE -ErrorAction SilentlyContinue
+    }
     Assert-UpdateInstallationRootHarness ($script:verifiedInstallationRoot -eq (Resolve-Path -LiteralPath $globalRelease).Path) 'xcode update verified the invoking source checkout instead of the newly installed global release.'
 }
 finally {
