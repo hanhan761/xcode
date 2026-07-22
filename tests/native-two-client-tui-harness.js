@@ -121,6 +121,10 @@ async function main() {
       30_000,
       'both official Codex composers',
     );
+    assert.equal(mainTui.workingObserved(), false,
+      'The main official TUI rendered Working before any user or Office turn.');
+    assert.equal(officeTui.workingObserved(), false,
+      'The office official TUI rendered Working before any user or Office turn.');
 
     const challenge = `NATIVE_TWO_CLIENT_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const acknowledgement = `ACK_${challenge}`;
