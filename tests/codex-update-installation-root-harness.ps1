@@ -39,7 +39,7 @@ if (($Arguments -join ' ') -eq 'root --global') {
     Write-Output $env:XCODE_TEST_GLOBAL_NPM_ROOT
     exit 0
 }
-if (($Arguments -join ' ') -eq 'install --global --force github:hanhan761/xcode#main') {
+if (($Arguments -join ' ') -eq 'install --global --force https://github.com/hanhan761/xcode/releases/download/v1.5.5/xcode-remote-1.5.5.tgz') {
     if ($env:XCODE_TEST_UPDATE_MODE -eq 'broken') {
         Set-Content -LiteralPath (Join-Path $env:XCODE_TEST_GLOBAL_NPM_ROOT 'xcode-remote\release-marker.txt') -Value 'broken' -Encoding utf8
     }
@@ -54,6 +54,7 @@ throw "Unexpected npm arguments: $($Arguments -join ' ')"
     Assert-UpdateInstallationRootHarness ($resolvedGlobalRelease -eq (Resolve-Path -LiteralPath $globalRelease).Path) 'The update helper did not resolve npm''s global xcode-remote package root.'
 
     function Get-XcodeActiveManagedSessionProcesses { return @() }
+    function Get-XcodeLatestReleasePackageUrl { return 'https://github.com/hanhan761/xcode/releases/download/v1.5.5/xcode-remote-1.5.5.tgz' }
     function Get-Command {
         param([string]$Name)
         if ($Name -eq 'npm.cmd') { return [pscustomobject]@{ Source = $fakeNpm } }
