@@ -175,6 +175,7 @@ $officeAttachmentRegistry = Join-Path $root 'lib\office-attachment-registry.js'
 $officeAttachAll = Join-Path $root 'lib\office-attach-all.js'
 $codexInstallationReporter = Join-Path $root 'bin\codex-installation.js'
 $managedResumeIndex = Join-Path $root 'lib\managed-resume-index.js'
+$managedProfileRepair = Join-Path $root 'scripts\repair-managed-codex-profile.js'
 $scopedAppServerRelay = Join-Path $root 'lib\scoped-app-server-relay.js'
 $nativeOfficeSession = Join-Path $root 'lib\native-codex-office-session.js'
 $nativeCodexTerminal = Join-Path $root 'lib\native-codex-terminal.js'
@@ -193,6 +194,7 @@ $managedCodexTransportRecoveryHarness = Join-Path $root 'tests\managed-codex-tra
 $authoritativeWorkingStateHarness = Join-Path $root 'tests\authoritative-working-state-harness.js'
 $managedCodexResumeScopeHarness = Join-Path $root 'tests\managed-codex-resume-scope-harness.js'
 $managedResumeIndexHarness = Join-Path $root 'tests\managed-resume-index-harness.js'
+$managedProfileRepairHarness = Join-Path $root 'tests\managed-profile-repair-harness.js'
 $sessionTitleHarness = Join-Path $root 'tests\session-title-harness.js'
 $nativeTwoClientHarness = Join-Path $root 'tests\native-two-client-tui-harness.js'
 $codexReadinessHarness = Join-Path $root 'tests\codex-readiness-harness.js'
@@ -238,6 +240,7 @@ Assert (Test-Path -LiteralPath $officeAttachAll) 'The office attach-all controll
 Assert (Test-Path -LiteralPath $codexInstallationReporter) 'The official Codex installation reporter is missing.'
 Assert (Test-Path -LiteralPath $codexUpdateInstallationRootHarness) 'The xcode update installation-root harness is missing.'
 Assert (Test-Path -LiteralPath $managedResumeIndex) 'The managed Codex workspace resume index is missing.'
+Assert (Test-Path -LiteralPath $managedProfileRepair) 'The managed Codex profile repair script is missing.'
 Assert (Test-Path -LiteralPath $scopedAppServerRelay) 'The selected-thread app-server relay is missing.'
 Assert (Test-Path -LiteralPath $nativeOfficeSession) 'The office native Codex adapter is missing.'
 Assert (Test-Path -LiteralPath $nativeCodexTerminal) 'The office native Codex terminal adapter is missing.'
@@ -255,6 +258,7 @@ Assert (Test-Path -LiteralPath $officeDisconnectIsolationHarness) 'The office-di
 Assert (Test-Path -LiteralPath $managedCodexTransportRecoveryHarness) 'The managed Codex transport-recovery harness is missing.'
 Assert (Test-Path -LiteralPath $managedCodexResumeScopeHarness) 'The managed Codex workspace resume harness is missing.'
 Assert (Test-Path -LiteralPath $managedResumeIndexHarness) 'The managed Codex resume-index harness is missing.'
+Assert (Test-Path -LiteralPath $managedProfileRepairHarness) 'The managed Codex profile repair harness is missing.'
 Assert (Test-Path -LiteralPath $sessionTitleHarness) 'The persistent session-title harness is missing.'
 Assert (Test-Path -LiteralPath $nativeTwoClientHarness) 'The two-official-client TUI harness is missing.'
 Assert (Test-Path -LiteralPath $codexReadinessHarness) 'The Codex readiness-gate harness is missing.'
@@ -354,6 +358,8 @@ Assert ($LASTEXITCODE -eq 0) 'The office native adapter did not preserve authori
 Assert ($LASTEXITCODE -eq 0) 'A Codex resume can overwrite the stored thread workspace or lose its selected policy.'
 & node.exe $managedResumeIndexHarness
 Assert ($LASTEXITCODE -eq 0) 'Managed Codex resume records did not preserve current-workspace scope.'
+& node.exe $managedProfileRepairHarness
+Assert ($LASTEXITCODE -eq 0) 'xcode update did not restore the managed Codex profile entrypoint.'
 & node.exe $managedCodexResumeScopeHarness
 Assert ($LASTEXITCODE -eq 0) 'The default managed Codex resume selector was not limited to the current workspace.'
 & node.exe $managedCodexTransportRecoveryHarness

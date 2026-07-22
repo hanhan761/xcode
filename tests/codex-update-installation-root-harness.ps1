@@ -61,6 +61,13 @@ throw "Unexpected npm arguments: $($Arguments -join ' ')"
     }
     function Write-XcodeStep { param([string]$Message) }
     function Remove-XcodePathEntry { param([string]$Directory) }
+    $script:profileRepairCount = 0
+    function Get-XcodeInstalledRole { return 'main' }
+    function Install-XcodeManagedCodexProfileEntrypoint {
+        param([string]$ProfilePath)
+        $script:profileRepairCount += 1
+        return [pscustomobject]@{ Changed = $true; HadLegacyZeroArgumentBug = $false }
+    }
     $script:verifiedInstallationRoot = ''
     function Write-XcodeReleaseStatus {
         param([string]$InstallationRoot)
@@ -76,6 +83,7 @@ throw "Unexpected npm arguments: $($Arguments -join ' ')"
         Set-Content -LiteralPath (Join-Path $globalRelease 'release-marker.txt') -Value 'known-good' -Encoding utf8
         $env:XCODE_TEST_UPDATE_MODE = 'success'
         Update-XcodePackage
+        Assert-UpdateInstallationRootHarness ($script:profileRepairCount -eq 1) 'A successful main-PC update did not repair the managed codex profile entrypoint.'
         $env:XCODE_TEST_UPDATE_MODE = 'broken'
         $updateError = $null
         try { Update-XcodePackage }
