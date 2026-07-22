@@ -190,6 +190,7 @@ $nativeOfficeMouseHarness = Join-Path $root 'tests\native-office-mouse-wheel-har
 $nativeOfficeTransportRecoveryHarness = Join-Path $root 'tests\native-office-transport-recovery-harness.js'
 $officeDisconnectIsolationHarness = Join-Path $root 'tests\office-disconnect-isolation-harness.js'
 $managedCodexTransportRecoveryHarness = Join-Path $root 'tests\managed-codex-transport-recovery-harness.js'
+$authoritativeWorkingStateHarness = Join-Path $root 'tests\authoritative-working-state-harness.js'
 $managedCodexResumeScopeHarness = Join-Path $root 'tests\managed-codex-resume-scope-harness.js'
 $managedResumeIndexHarness = Join-Path $root 'tests\managed-resume-index-harness.js'
 $sessionTitleHarness = Join-Path $root 'tests\session-title-harness.js'
@@ -357,6 +358,8 @@ Assert ($LASTEXITCODE -eq 0) 'Managed Codex resume records did not preserve curr
 Assert ($LASTEXITCODE -eq 0) 'The default managed Codex resume selector was not limited to the current workspace.'
 & node.exe $managedCodexTransportRecoveryHarness
 Assert ($LASTEXITCODE -eq 0) 'The main Codex terminal did not recover after a remote app-server transport reset.'
+& node.exe $authoritativeWorkingStateHarness
+Assert ($LASTEXITCODE -eq 0) 'A stale native Working indicator was not reconciled with the authoritative Codex thread state.'
 & node.exe $nativeOfficeTransportRecoveryHarness
 Assert ($LASTEXITCODE -eq 0) 'The office Codex terminal did not recover after a remote app-server transport reset.'
 & node.exe $officeDisconnectIsolationHarness
