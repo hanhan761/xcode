@@ -184,6 +184,40 @@ function Get-XcodeGlobalPackageRoot {
     return (Resolve-Path -LiteralPath $packageRoot).Path
 }
 
+function Get-XcodeLatestReleasePackageUrl {
+    param(
+        [scriptblock]$FetchRelease = {
+            Invoke-RestMethod -Uri 'https://api.github.com/repos/hanhan761/xcode/releases/latest' -Headers @{ 'User-Agent' = 'xcode-remote-update' } -ErrorAction Stop
+        }
+    )
+
+    try { $release = & $FetchRelease }
+    catch { throw 'xcode could not retrieve the latest GitHub Release metadata.' }
+    if (-not $release -or $release.draft -or $release.prerelease) {
+        throw 'xcode did not receive a published stable GitHub Release.'
+    }
+    $assets = @($release.assets | Where-Object { [string]$_.name -match '^xcode-remote-([0-9]+\.[0-9]+\.[0-9]+)\.tgz$' })
+    if ($assets.Count -ne 1) {
+        throw 'xcode requires exactly one xcode-remote-<semver>.tgz asset in the latest GitHub Release.'
+    }
+    $asset = $assets[0]
+    if ([string]$asset.state -ne 'uploaded') {
+        throw 'The latest GitHub Release package asset is not uploaded.'
+    }
+    $version = [regex]::Match([string]$asset.name, '^xcode-remote-([0-9]+\.[0-9]+\.[0-9]+)\.tgz$').Groups[1].Value
+    $tag = [string]$release.tag_name
+    if ($tag -ne "v$version") {
+        throw 'The latest GitHub Release tag does not match its xcode package asset.'
+    }
+    try { $url = [uri][string]$asset.browser_download_url }
+    catch { throw 'The latest GitHub Release package asset has an invalid URL.' }
+    $expectedPath = "/hanhan761/xcode/releases/download/$tag/$($asset.name)"
+    if ($url.Scheme -ne 'https' -or $url.Host -ne 'github.com' -or $url.AbsolutePath -ne $expectedPath) {
+        throw 'The latest GitHub Release package asset is not the expected HTTPS GitHub Release asset.'
+    }
+    return $url.AbsoluteUri
+}
+
 function Update-XcodePackage {
     $activeManagedSessions = @(Get-XcodeActiveManagedSessionProcesses)
     if ($activeManagedSessions.Count -gt 0) {
@@ -195,17 +229,15 @@ function Update-XcodePackage {
     if (-not $npm) { $npm = Get-Command npm -ErrorAction SilentlyContinue }
     if (-not $npm) { throw 'npm is required for xcode update. Install Node.js 18 or newer, then run the command again.' }
 
+    $releasePackageUrl = Get-XcodeLatestReleasePackageUrl
     $currentReleaseRoot = Get-XcodeGlobalPackageRoot -Npm $npm
     $backupRoot = Join-Path (Split-Path -Parent $currentReleaseRoot) ('.xcode-remote-backup-' + [guid]::NewGuid().ToString('N'))
     $preserveBackup = $false
     Copy-Item -LiteralPath $currentReleaseRoot -Destination $backupRoot -Recurse -Force -ErrorAction Stop
 
-    Write-XcodeStep 'Updating xcode from GitHub'
+    Write-XcodeStep 'Updating xcode from the latest GitHub Release'
     try {
-        # The package version can remain unchanged between GitHub main commits.
-        # Force npm to fetch the remote Git source instead of retaining a cached
-        # global package with the same manifest version.
-        & $npm.Source install --global --force 'github:hanhan761/xcode#main'
+        & $npm.Source install --global --force $releasePackageUrl
         if ($LASTEXITCODE -ne 0) { throw "npm could not update xcode (exit $LASTEXITCODE)." }
         $updatedReleaseRoot = Get-XcodeGlobalPackageRoot -Npm $npm
         $report = Write-XcodeReleaseStatus -InstallationRoot $updatedReleaseRoot

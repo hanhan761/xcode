@@ -218,6 +218,7 @@ $officeAttachAllHarness = Join-Path $root 'tests\office-attach-all-harness.js'
 $sessionClientAttachHarness = Join-Path $root 'tests\session-client-attach-harness.js'
 $codexInstallationHarness = Join-Path $root 'tests\codex-installation-harness.js'
 $codexUpdateGuardHarness = Join-Path $root 'tests\codex-update-session-guard-harness.ps1'
+$releaseAssetHarness = Join-Path $root 'tests\xcode-release-asset-harness.ps1'
 $codexUpdateInstallationRootHarness = Join-Path $root 'tests\codex-update-installation-root-harness.ps1'
 Assert (Test-Path -LiteralPath $dispatcher) 'The unified xcode dispatcher is missing.'
 Assert (Test-Path -LiteralPath $packagePath) 'The npm package manifest is missing.'
@@ -283,6 +284,7 @@ Assert (Test-Path -LiteralPath $officeAttachAllHarness) 'The office attach-all h
 Assert (Test-Path -LiteralPath $sessionClientAttachHarness) 'The office session-client attach harness is missing.'
 Assert (Test-Path -LiteralPath $codexInstallationHarness) 'The official Codex installation harness is missing.'
 Assert (Test-Path -LiteralPath $codexUpdateGuardHarness) 'The active Codex-session update guard harness is missing.'
+Assert (Test-Path -LiteralPath $releaseAssetHarness) 'The GitHub Release package-asset harness is missing.'
 $package = Get-Content -Raw -LiteralPath $packagePath | ConvertFrom-Json
 Assert ($package.name -eq 'xcode-remote') 'The npm package name is incorrect.'
 Assert ($package.version -eq '1.5.5') 'The native-scrollback release version is incorrect.'
@@ -384,6 +386,8 @@ Assert ($LASTEXITCODE -eq 0) 'The office tab launcher did not revalidate its sel
 Assert ($LASTEXITCODE -eq 0) 'The official Codex installation could not be resolved and version-verified.'
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $codexUpdateGuardHarness -RepositoryRoot $root
 Assert ($LASTEXITCODE -eq 0) 'xcode update did not protect active main or office native Codex sessions.'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $releaseAssetHarness -RepositoryRoot $root
+Assert ($LASTEXITCODE -eq 0) 'xcode update did not resolve a verified GitHub Release package asset.'
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $codexUpdateInstallationRootHarness -RepositoryRoot $root
 Assert ($LASTEXITCODE -eq 0) 'xcode update did not verify the global package it installed.'
 $nodeHelpText = (& node.exe $nodeLauncher help | Out-String)
@@ -446,7 +450,7 @@ finally {
 }
 Assert ($mainScript -match 'Remove-XcodePathEntry') 'The main PC does not clear the legacy local xcode launcher.'
 Assert ([regex]::Match((Get-Content -Raw $dispatcher), 'function Update-XcodePackage \{[\s\S]*?\n\}').Value -match 'Remove-XcodePathEntry') 'xcode update does not remove the legacy local launcher from PATH.'
-Assert ((Get-Content -Raw $dispatcher) -match "github:hanhan761/xcode#main") 'xcode update does not use the GitHub release source.'
+Assert ((Get-Content -Raw $dispatcher) -match 'Get-XcodeLatestReleasePackageUrl') 'xcode update does not use the verified GitHub Release asset.'
 Assert ($officeScript -notmatch 'Confirm pair-office\.cmd') 'Office pairing recovery still exposes the legacy CMD command.'
 $forbidden = 'tskey-|BEGIN OPENSSH PRIVATE KEY'
 $hits = Get-ChildItem $root -Recurse -File |
