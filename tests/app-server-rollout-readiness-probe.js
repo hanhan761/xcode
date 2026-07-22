@@ -14,7 +14,8 @@ const { Terminal } = require('@xterm/headless');
 
 const packageRoot = path.resolve(process.env.XCODE_PACKAGE_ROOT || path.join(__dirname, '..'));
 const { acquireSharedAppServer } = require(path.join(packageRoot, 'lib', 'app-server-host'));
-const { AppServerClient } = require(path.join(packageRoot, 'lib', 'app-server-session'));
+const { AppServerClient, initializeNewThreadForRemoteTui } = require(path.join(packageRoot, 'lib', 'app-server-session'));
+const { hasVisibleNativeWorkingSpinner } = require(path.join(packageRoot, 'lib', 'authoritative-working-state'));
 const { findNativeCodex } = require(path.join(packageRoot, 'lib', 'codex-executable'));
 
 const RUN = process.env.XCODE_RUN_APP_SERVER_ROLLOUT_PROBE === '1';
@@ -98,15 +99,12 @@ async function main() {
     assert.ok(threadId, 'thread/start did not return a thread id.');
     console.log('APP_SERVER_ROLLOUT_READINESS=thread-started');
 
-    let completedAt = null;
-    authority.onNotification((event) => {
-      if (event.method === 'turn/completed' && event.params?.threadId === threadId) {
-        completedAt = Date.now();
-      }
-    });
-    const turnAcceptedAt = Date.now();
-    await authority.request('turn/start', { threadId, input: [] });
-    console.log('APP_SERVER_ROLLOUT_READINESS=turn-accepted');
+    const bootstrapStartedAt = Date.now();
+    await initializeNewThreadForRemoteTui(authority, threadId);
+    const bootstrapCompletedAt = Date.now();
+    const bootstrapState = await authority.request('thread/read', { threadId });
+    assert.equal(bootstrapState.thread?.status?.type, 'idle', 'The internal bootstrap turn did not leave the thread idle.');
+    console.log('APP_SERVER_ROLLOUT_READINESS=bootstrap-completed');
     terminal = new Terminal({ cols: 104, rows: 32, scrollback: 2_000, allowProposedApi: true, convertEol: false, logLevel: 'off' });
     let raw = '';
     tui = pty.spawn(codex, ['resume', '--remote', host.url, '--no-alt-screen', threadId], {
@@ -119,10 +117,10 @@ async function main() {
     await waitFor(() => terminalText(terminal).includes('OpenAI Codex'), 45_000, 'the native remote TUI to open');
 
     const nativeTuiReadyAt = Date.now();
-    const nativeTuiLatencyMs = nativeTuiReadyAt - turnAcceptedAt;
-    assert.ok(nativeTuiLatencyMs >= 0, 'The native TUI timestamp predates turn/start acceptance.');
-    const completedBeforeTui = completedAt !== null && completedAt <= nativeTuiReadyAt;
-    assert.equal(completedBeforeTui, false, 'The native remote TUI was still gated on the bootstrap turn completion event.');
+    const nativeTuiLatencyMs = nativeTuiReadyAt - bootstrapCompletedAt;
+    assert.ok(nativeTuiLatencyMs >= 0, 'The native TUI timestamp predates bootstrap completion.');
+    const beforeFirstUserTurn = terminalText(terminal);
+    assert.equal(hasVisibleNativeWorkingSpinner(beforeFirstUserTurn), false, 'The native TUI displayed the internal bootstrap turn as Working.');
     const challenge = `XCODE_ROLLOUT_READY_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const acknowledgement = `READY_${challenge}`;
     await typeLikeUser(tui, `Reply with exactly: ${acknowledgement}. Do not use tools.`);
@@ -131,7 +129,7 @@ async function main() {
       45_000,
       `the first native TUI turn to complete (tail: ${JSON.stringify(raw.slice(-1_000))})`,
     );
-    console.log(`APP_SERVER_ROLLOUT_READINESS=PASS nativeTuiMs=${nativeTuiLatencyMs} completedBeforeTui=${completedBeforeTui} firstTurn=accepted`);
+    console.log(`APP_SERVER_ROLLOUT_READINESS=PASS bootstrapMs=${bootstrapCompletedAt - bootstrapStartedAt} nativeTuiMs=${nativeTuiLatencyMs} bootstrapWorking=false firstTurn=accepted`);
   }
   finally {
     await stopTui(tui);
